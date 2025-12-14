@@ -47,11 +47,7 @@
                 <div style="display: flex; gap: var(--sp-md); align-items: center;">
                     <div class="panel-icon-wrapper">
                         <div
-<<<<<<< HEAD
-                            class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% else %}icon-3xui{% endif %}">
-=======
                             class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% elif panel.panel_type == 'pasargad' %}icon-pasargad{% else %}icon-3xui{% endif %}">
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                             <i class="fas fa-server"></i>
                         </div>
                     </div>
@@ -59,11 +55,7 @@
                         <div style="font-weight: 800; font-size: 1.1rem; margin-bottom: 2px;">{{ panel.name }}</div>
                         <div style="display: flex; gap: var(--sp-xs);">
                             <span
-<<<<<<< HEAD
-                                class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% else %}badge-warning{% endif %}">
-=======
                                 class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% elif panel.panel_type == 'pasargad' %}badge-success{% else %}badge-warning{% endif %}">
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                                 {{ panel.panel_type|upper }}
                             </span>
                             {% if panel.is_active %}
@@ -138,61 +130,74 @@
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-md);">
                 <div class="form-group">
                     <label class="form-label">نام پنل</label>
-                    <input type="text" name="name" class="form-control" required placeholder="مثال: سرور آلمان">
+                    <input type="text" name="name" class="form-control" required placeholder="مثال: سرور اختصاصی آلمان">
+                    <small class="text-muted" style="font-size: 0.75rem;">یک نام دلخواه برای شناسایی این پنل در
+                        سیستم.</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">نوع پنل</label>
                     <select name="panel_type" class="form-control" required>
-                        <option value="3x-ui">3x-ui (X-UI)</option>
+                        <option value="3x-ui">3x-ui (Sanaei/X-UI)</option>
                         <option value="marzban">Marzban</option>
                         <option value="rebecca">Rebecca</option>
-<<<<<<< HEAD
-=======
                         <option value="pasargad">Pasargad</option>
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                     </select>
+                    <small class="text-muted" style="font-size: 0.75rem;">نوع سیستم مدیریت VPN نصب شده روی سرور.</small>
                 </div>
             </div>
 
             <div class="form-group">
                 <label class="form-label">URL پنل</label>
-                <input type="text" name="url" class="form-control" required placeholder="https://example.com:2053">
+                <input type="text" name="url" id="add_panel_url" class="form-control" required
+                    placeholder="https://panel.example.com:2053/path">
+                <small id="add_panel_url_help" class="text-muted"
+                    style="display: block; margin-top: 5px; line-height: 1.5;">
+                    لطفاً آدرس کامل ورود به پنل را وارد کنید.
+                </small>
             </div>
 
             <div class="form-group">
-                <label class="form-label">API Endpoint (معمولا همان URL)</label>
-                <input type="text" name="api_endpoint" class="form-control" required
-                    placeholder="https://example.com:2053">
+                <label class="form-label">API Endpoint (اختیاری)</label>
+                <input type="text" name="api_endpoint" class="form-control"
+                    placeholder="معمولاً خالی بگذارید تا از URL بالا استفاده شود">
+                <small class="text-muted" style="font-size: 0.75rem;">تنها در صورتی پر کنید که آدرس API با آدرس پنل
+                    متفاوت است.</small>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-md);">
                 <div class="form-group">
                     <label class="form-label">نام کاربری</label>
                     <input type="text" name="username" class="form-control" required>
+                    <small class="text-muted" style="font-size: 0.75rem;">نام کاربری ورود به پنل مدیریت.</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">رمز عبور</label>
                     <input type="password" name="password" class="form-control" required>
+                    <small class="text-muted" style="font-size: 0.75rem;">رمز عبور ورود به پنل مدیریت.</small>
                 </div>
             </div>
 
             <div class="form-group">
                 <label class="form-label">لینک سابسکریپشن (اختیاری)</label>
                 <input type="text" name="subscription_url" class="form-control" placeholder="https://sub.example.com">
+                <small class="text-muted" style="font-size: 0.75rem;">دامنه‌ای که برای لینک‌های اتصال کاربران استفاده
+                    می‌شود. اگر خالی باشد از آدرس پنل استفاده می‌شود.</small>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-md);">
                 <div class="form-group">
                     <label class="form-label">قیمت هر گیگ (تومان)</label>
                     <input type="number" name="price_per_gb" class="form-control" value="0" min="0">
+                    <small class="text-muted" style="font-size: 0.75rem;">قیمت پایه برای محاسبه سود فروش.</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label">نوع فروش</label>
                     <select name="sale_type" class="form-control" required>
-                        <option value="gigabyte">گیگابایتی</option>
-                        <option value="plan">پلنی</option>
+                        <option value="gigabyte">گیگابایتی (حجمی)</option>
+                        <option value="plan">پلنی (بسته‌ای)</option>
                         <option value="both">هر دو</option>
                     </select>
+                    <small class="text-muted" style="font-size: 0.75rem;">نحوه فروش حجم در این سرور.</small>
                 </div>
             </div>
 
@@ -202,11 +207,9 @@
                     <option value="">انتخاب کنید...</option>
                 </select>
                 <small class="text-muted" style="display: block; margin-top: 5px;">برای ربکا، ابتدا دکمه تست را
-                    بزنید.</small>
+                    بزنید تا لیست اینباندها بارگذاری شود.</small>
             </div>
 
-<<<<<<< HEAD
-=======
             <div id="add_pasargad_group_container" class="form-group" style="display: none;">
                 <label class="form-label">گروه اصلی (Main Group)</label>
                 <select id="add_pasargad_group" name="pasargad_group" class="form-control">
@@ -216,7 +219,6 @@
                     شد.</small>
             </div>
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
                 <button type="button" class="btn btn-secondary" onclick="testAndFetchServices()" style="flex: 1;">
                     <i class="fas fa-sync"></i> تست اتصال
@@ -253,10 +255,7 @@
                         <option value="3x-ui">3x-ui</option>
                         <option value="marzban">Marzban</option>
                         <option value="rebecca">Rebecca</option>
-<<<<<<< HEAD
-=======
                         <option value="pasargad">Pasargad</option>
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                     </select>
                 </div>
             </div>
@@ -309,8 +308,6 @@
                 </select>
             </div>
 
-<<<<<<< HEAD
-=======
             <div id="edit_pasargad_group_container" class="form-group" style="display: none;">
                 <label class="form-label">گروه اصلی (Main Group)</label>
                 <select id="edit_pasargad_group" name="pasargad_group" class="form-control">
@@ -318,7 +315,6 @@
                 </select>
             </div>
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('editPanelModal')"
                     style="flex: 1;">لغو</button>
@@ -476,13 +472,10 @@
         background: linear-gradient(135deg, #ec4899, #db2777);
     }
 
-<<<<<<< HEAD
-=======
     .icon-pasargad {
         background: linear-gradient(135deg, #10b981, #059669);
     }
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     .detail-row {
         display: flex;
         justify-content: space-between;
@@ -559,6 +552,8 @@
     // Modal Functions
     function showAddPanelModal() {
         document.getElementById('addPanelModal').style.display = 'flex';
+        // Trigger change to set initial placeholders
+        document.querySelector('select[name="panel_type"]').dispatchEvent(new Event('change'));
     }
 
     function showMigratePanelModal() {
@@ -587,8 +582,6 @@
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
 
-<<<<<<< HEAD
-=======
         // Handle Pasargad extra config
         if (data.panel_type === 'pasargad') {
             const group = document.getElementById('add_pasargad_group').value;
@@ -597,7 +590,6 @@
             }
         }
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         // Convert checkbox to boolean if needed, though FormData usually handles it
         // Add logic to call API
         try {
@@ -626,24 +618,29 @@
 
     // Re-implementing specific logic for panel types (showing/hiding inbound select)
     document.querySelector('select[name="panel_type"]').addEventListener('change', function (e) {
+        const type = e.target.value;
         const inboundContainer = document.getElementById('add_inbound_container');
-<<<<<<< HEAD
-        if (e.target.value === 'rebecca') {
-            inboundContainer.style.display = 'block';
-        } else {
-            inboundContainer.style.display = 'none';
-        }
-    });
-
-=======
         const pasargadContainer = document.getElementById('add_pasargad_group_container');
 
+        // Dynamic Help Text Logic
+        const urlInput = document.getElementById('add_panel_url');
+        const urlHelp = document.getElementById('add_panel_url_help');
+
+        if (type === 'marzban' || type === 'rebecca') {
+            urlInput.placeholder = 'https://panel.example.com:2080';
+            urlHelp.innerHTML = '<i class="fas fa-info-circle"></i> لطفاً آدرس را <b>فقط تا پورت</b> وارد کنید. بدون هیچ مسیر اضافه‌ای.<br>مثال صحیح: <code style="direction: ltr; background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 4px;">https://panel.example.com:2080</code>';
+        } else if (type === 'pasargad' || type === '3x-ui') {
+            urlInput.placeholder = 'https://panel.example.com:2080/path';
+            urlHelp.innerHTML = '<i class="fas fa-info-circle"></i> لطفاً آدرس را <b>به همراه مسیر (Path)</b> پنل وارد کنید.<br>مثال صحیح: <code style="direction: ltr; background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 4px;">https://panel.example.com:2080/panel_path</code>';
+        }
+
+        // Visibility Logic
         inboundContainer.style.display = 'none';
         pasargadContainer.style.display = 'none';
 
-        if (e.target.value === 'rebecca') {
+        if (type === 'rebecca') {
             inboundContainer.style.display = 'block';
-        } else if (e.target.value === 'pasargad') {
+        } else if (type === 'pasargad') {
             pasargadContainer.style.display = 'block';
         }
     });
@@ -718,7 +715,6 @@
         }
     }
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     // Edit Panel Logic
     async function editPanel(id) {
         try {
@@ -736,8 +732,6 @@
             form.price_per_gb.value = panel.price_per_gb;
             form.sale_type.value = panel.sale_type;
 
-<<<<<<< HEAD
-=======
             // Handle extra config for Pasargad
             const pasargadContainer = document.getElementById('edit_pasargad_group_container');
             const inboundContainer = document.getElementById('edit_inbound_container');
@@ -780,7 +774,6 @@
                 // Populate inbounds... (existing logic or simplified)
             }
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             document.getElementById('editPanelModal').style.display = 'flex';
         } catch (error) {
             console.error(error);
@@ -796,6 +789,128 @@
             setTimeout(() => window.location.reload(), 1000);
         } catch (error) {
             console.error(error);
+        }
+    }
+
+    // Update Panel
+    async function updatePanel(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        const id = data.panel_id;
+
+        // Handle Pasargad extra config for edit
+        if (data.panel_type === 'pasargad') {
+            const group = document.getElementById('edit_pasargad_group').value;
+            if (group) {
+                data.extra_config = { main_group: group };
+            }
+        }
+
+        try {
+            await apiCall(`/api/admin/panels/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+            showToast('پنل با موفقیت ویرایش شد', 'success');
+            closeModal('editPanelModal');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    // Migrate Panel
+    async function migratePanel(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        // Convert checkbox
+        data.delete_source = form.querySelector('input[name="delete_source"]').checked;
+
+        if (data.source_panel_id === data.dest_panel_id) {
+            showToast('پنل مبدا و مقصد نمی‌توانند یکسان باشند', 'error');
+            return;
+        }
+
+        const btn = form.querySelector('button[type="submit"]');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال مهاجرت...';
+        btn.disabled = true;
+
+        const statsDiv = document.getElementById('migrationStats');
+        statsDiv.style.display = 'none';
+
+        try {
+            const response = await apiCall('/api/admin/panels/migrate', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+
+            showToast('مهاجرت با موفقیت انجام شد', 'success');
+
+            // Show stats
+            statsDiv.style.display = 'block';
+            statsDiv.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 5px; color: var(--p-success);">نتیجه مهاجرت:</div>
+                <div>تعداد کل: ${response.total_users}</div>
+                <div>موفق: ${response.success_count}</div>
+                <div>ناموفق: ${response.fail_count}</div>
+            `;
+
+            // Don't close immediately so user can see stats
+            // closeModal('migratePanelModal');
+            // setTimeout(() => window.location.reload(), 3000);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // Recover Services
+    async function recoverServices(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        if (data.source_panel_id === data.dest_panel_id) {
+            showToast('پنل مبدا و مقصد نمی‌توانند یکسان باشند', 'error');
+            return;
+        }
+
+        const btn = form.querySelector('button[type="submit"]');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال بازیابی...';
+        btn.disabled = true;
+
+        const statsDiv = document.getElementById('recoveryStats');
+        statsDiv.style.display = 'none';
+
+        try {
+            const response = await apiCall('/api/admin/panels/recover-services', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+
+            showToast('بازیابی با موفقیت انجام شد', 'success');
+
+            statsDiv.style.display = 'block';
+            statsDiv.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 5px; color: var(--p-success);">نتیجه بازیابی:</div>
+                <div>تعداد سرویس‌های بروز شده: ${response.updated_count}</div>
+            `;
+
+        } catch (error) {
+            console.error(error);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
     }
 </script>

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Telegram Bot for 3x-ui Panel Management
 Simple bot to create VPN clients and send configurations
@@ -27,13 +28,9 @@ from config import BOT_CONFIG, CLIENT_DEFAULTS, DEFAULT_PANEL_CONFIG, WEBAPP_CON
 from traffic_monitor import TrafficMonitor
 from persian_datetime import PersianDateTime, format_db_datetime, format_db_date
 from user_info_updater import auto_update_user_info, ensure_user_updated
-<<<<<<< HEAD
-from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
-=======
 from user_info_updater import auto_update_user_info, ensure_user_updated
 from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
 from system_manager import SystemManager
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 
 # Configure logging
 logging.basicConfig(
@@ -103,11 +100,8 @@ class VPNBot:
             self.db = ProfessionalDatabaseManager()
         else:
             self.db = db
-<<<<<<< HEAD
-=======
             
         self.system_manager = None
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         
         self.panel_manager = PanelManager()
         self.user_sessions = {}  # Store user session data
@@ -717,29 +711,7 @@ class VPNBot:
 
                 else:
                     # User is not a member yet
-<<<<<<< HEAD
-                    error_message = "❌ متأسفانه شما هنوز عضو کانال نشده‌اید.\n\nلطفاً ابتدا در کانال عضو شوید و سپس دوباره روی دکمه «عضو شدم» کلیک کنید."
-                    error_keyboard = InlineKeyboardMarkup([[
-                            InlineKeyboardButton("📢 عضویت در کانال", url=self.bot_config.get('channel_link', 'https://t.me/YourChannel')),
-                            InlineKeyboardButton("✅ عضو شدم", callback_data="check_channel_join")
-                        ]])
-                    
-                    try:
-                        await query.edit_message_text(
-                            error_message,
-                            reply_markup=error_keyboard
-                        )
-                    except BadRequest as e:
-                        # If message is not modified (already the same), just answer the callback
-                        if "not modified" in str(e).lower():
-                            logger.info(f"Message not modified for user {user_id}, user may have clicked button multiple times")
-                            await query.answer("⚠️ لطفاً ابتدا در کانال عضو شوید.", show_alert=False)
-                        else:
-                            # Re-raise other BadRequest errors
-                            raise
-=======
                     await show_force_join_message(update, context, bot_config=self.bot_config)
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 return
             elif data == "show_inbounds":
                 await self.show_inbounds(update, context)
@@ -995,15 +967,12 @@ class VPNBot:
                 await self.handle_confirm_product_delete(update, context, product_id)
             elif data == "admin_panel":
                 await self.handle_admin_panel(update, context)
-<<<<<<< HEAD
-=======
             elif data == "system_settings":
                 await self.handle_system_settings(update, context)
             elif data == "system_logs":
                 await self.handle_system_action(update, context, "logs")
             elif data.startswith("sys_"):
                 await self.handle_system_action(update, context, data.split("_")[1])
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             elif data == "admin_stats":
                 await self.handle_admin_stats(update, context)
             elif data == "stats_users":
@@ -1121,11 +1090,7 @@ class VPNBot:
             elif data == "list_panels":
                 await self.handle_list_panels(update, context)
             elif data == "add_panel":
-<<<<<<< HEAD
-                await self.handle_add_panel_flow(update, context)
-=======
                 await self.start_add_panel(update, context)
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             elif data.startswith("panel_type_"):
                 panel_type = data.replace("panel_type_", "")
                 await self.handle_panel_type_selection(update, context, panel_type)
@@ -1434,14 +1399,11 @@ class VPNBot:
                 # Handle protocol selection for Marzban panels
                 protocol = data.split("_")[4]  # vless, vmess, or trojan
                 await self.handle_protocol_selection_for_panel(update, context, protocol)
-<<<<<<< HEAD
-=======
             elif data.startswith("select_group_for_panel_"):
                 # Handle group selection for Pasargad panels
                 # group_id might be string (name) or int
                 group_id = data.split("_", 4)[4]
                 await self.handle_group_selection_for_panel(update, context, group_id)
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             elif data == "page_info":
                 # Handle page info button - just show a simple alert
                 await query.answer("ℹ️ این دکمه فقط نمایشگر شماره صفحه است", show_alert=False)
@@ -2650,20 +2612,6 @@ class VPNBot:
         context.user_data['adding_panel'] = True
         
         add_text = """
-<<<<<<< HEAD
-➕ **اضافه کردن پنل جدید**
-
-لطفاً نوع پنل را انتخاب کنید:
-        """
-        
-        keyboard = [
-            [InlineKeyboardButton("3x-ui", callback_data="panel_type_3x-ui")],
-            [InlineKeyboardButton("Marzban", callback_data="panel_type_marzban")],
-            [InlineKeyboardButton("Rebecca", callback_data="panel_type_rebecca")],
-            [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-=======
 🔧 **اضافه کردن پنل جدید**
 
 لطفاً نوع پنل را انتخاب کنید:
@@ -2675,7 +2623,6 @@ class VPNBot:
         """
         
         reply_markup = ButtonLayout.create_panel_type_selection()
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         
         await query.edit_message_text(
             add_text,
@@ -2778,9 +2725,14 @@ class VPNBot:
                 'price': 'قیمت هر گیگابایت'
             }
             
+            # Dynamic URL example
+            url_example = 'https://panel.example.com:2080/path'
+            if panel.get('panel_type') in ['marzban', 'rebecca']:
+                url_example = 'https://panel.example.com:2080 (فقط تا پورت)'
+            
             examples = {
                 'name': 'مثال: Germany Server',
-                'url': 'مثال: https://panel.example.com:2080',
+                'url': f'مثال: {url_example}',
                 'username': 'مثال: admin',
                 'password': 'مثال: mypassword123',
                 'subscription_url': 'مثال: https://gr.astonnetwork.xyz:2096/sub',
@@ -3301,8 +3253,19 @@ class VPNBot:
             context.user_data['panel_name'] = text
             context.user_data['panel_step'] = 'url'
             
+            panel_type = context.user_data.get('panel_type', '3x-ui')
+            if panel_type in ['marzban', 'rebecca']:
+                example = "https://panel.example.com:2080"
+                note = "لطفاً آدرس را **فقط تا پورت** وارد کنید. بدون هیچ مسیر اضافه‌ای."
+            else:
+                example = "https://panel.example.com:2080/panel_path"
+                note = "لطفاً آدرس را **به همراه مسیر (Path)** پنل وارد کنید."
+
             await update.message.reply_text(
-                "🔗 **لینک کامل ورود به پنل را وارد کنید:**\n\nمثال: `https://panel.example.com:2080/username`"
+                f"🔗 **لینک کامل ورود به پنل را وارد کنید:**\n\n"
+                f"مثال: `{example}`\n\n"
+                f"💡 {note}",
+                parse_mode='Markdown'
             )
             
         elif step == 'url':
@@ -3379,10 +3342,6 @@ class VPNBot:
                 
                 panel_type = context.user_data.get('panel_type', '3x-ui')
                 
-<<<<<<< HEAD
-                # For Marzban and Rebecca, ask for protocol instead of inbound
-                if panel_type in ['marzban', 'rebecca']:
-=======
                 # For Pasargad, ask for Group
                 if panel_type == 'pasargad':
                     panel_url = context.user_data['panel_url']
@@ -3433,7 +3392,6 @@ class VPNBot:
 
                 # For Marzban and Rebecca, ask for protocol instead of inbound
                 elif panel_type in ['marzban', 'rebecca']:
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                     text = "🔗 **انتخاب پروتکل برای ساخت کلاینت‌ها:**\n\n"
                     text += "کاربران از تمامی inbound های پروتکل انتخابی استفاده خواهند کرد.\n\n"
                     
@@ -10282,19 +10240,11 @@ class VPNBot:
                 if panel:
                     panel_type = panel.get('panel_type', '3x-ui')
                     
-<<<<<<< HEAD
-                    if panel_type in ['marzban', 'rebecca']:
-                        # For Marzban and Rebecca, get subscription link from panel API
-                        panel_manager = self.admin_manager.get_panel_manager(service['panel_id'])
-                        if panel_manager and panel_manager.login():
-                            # Get subscription URL from panel (Marzban/Rebecca returns subscription link)
-=======
                     if panel_type in ['marzban', 'rebecca', 'pasargad']:
                         # For Marzban, Rebecca, and Pasargad, get subscription link from panel API
                         panel_manager = self.admin_manager.get_panel_manager(service['panel_id'])
                         if panel_manager and panel_manager.login():
                             # Get subscription URL from panel (Marzban/Rebecca/Pasargad returns subscription link)
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                             subscription_link = panel_manager.get_client_config_link(
                                 service['inbound_id'],
                                 service['client_uuid'],
@@ -10737,13 +10687,8 @@ class VPNBot:
             
             # Get subscription link based on panel type (NOT direct config)
             subscription_link = ""
-<<<<<<< HEAD
-            if panel_type in ['marzban', 'rebecca']:
-                # For Marzban and Rebecca, use the subscription_url from reset result
-=======
             if panel_type in ['marzban', 'rebecca', 'pasargad']:
                 # For Marzban, Rebecca, and Pasargad, use the subscription_url from reset result
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 subscription_link = new_client_info.get('subscription_url', '')
                 # Make sure it's a full URL
                 if subscription_link and not subscription_link.startswith('http'):
@@ -14001,9 +13946,6 @@ class VPNBot:
             new_total_gb = current_total_gb + volume_gb
             
             # Update volume in panel
-<<<<<<< HEAD
-            result = self.panel_manager.update_client_traffic(
-=======
             # Get appropriate panel manager
             pm = self.admin_manager.get_panel_manager(panel_id)
             if not pm:
@@ -14012,7 +13954,6 @@ class VPNBot:
                 return
 
             result = pm.update_client_traffic(
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 service['inbound_id'],
                 service['client_uuid'],
                 new_total_gb
@@ -14075,7 +14016,6 @@ class VPNBot:
                 if discount_amount > 0:
                     discount_message = f"\n🎁 **کد تخفیف:** {applied_discount_code}\n💵 **مبلغ تخفیف:** {discount_amount:,} تومان\n📌 **قیمت اصلی:** {original_amount:,} تومان\n"
                 
-<<<<<<< HEAD
                 # Fetch subscription link for display
                 subscription_link = ""
                 try:
@@ -14092,19 +14032,14 @@ class VPNBot:
                 
                 config_message = f"\n\n🔧 **کانفیگ VPN:**\n`{subscription_link}`" if subscription_link else ""
                 
-=======
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 message = f"""
 ✅ **حجم با موفقیت اضافه شد!**
 
 📊 **حجم اضافه شده:** {volume_gb} گیگابایت
 📈 **حجم کل جدید:** {new_total_gb} گیگابایت{discount_message}💰 **مبلغ پرداخت شده:** {final_price:,} تومان
 
-<<<<<<< HEAD
 سرویس شما به‌روزرسانی شد و آماده استفاده است.{config_message}
-=======
-سرویس شما به‌روزرسانی شد و آماده استفاده است.
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
+                """
                 """
                 
                 keyboard = [
@@ -14471,7 +14406,7 @@ class VPNBot:
             
             keyboard.append([InlineKeyboardButton("◀️ بازگشت", callback_data="stats_users")])
             
-            message = f"""🆕 **آخرین ثبت نام‌ها**
+            message = f"""\U0001F195 **آخرین ثبت نام‌ها**
 
 📊 **صفحه:** `{page}/{total_pages}`
 👥 **کل ثبت نام‌های ۳۰ روز گذشته:** `{len(new_users):,} نفر`"""
@@ -15750,30 +15685,18 @@ def main():
     # CRITICAL: Pass bot_config to ReportingSystem to ensure reports go to correct channel
     bot.reporting_system = ReportingSystem(telegram_bot, bot_config=bot.bot_config)
     bot.statistics_system = StatisticsSystem(bot.db, bot.admin_manager)
-<<<<<<< HEAD
-=======
     bot.system_manager = SystemManager(telegram_bot, bot.db, bot.bot_config)
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     
     # Create application
     application = Application.builder().token(BOT_CONFIG['token']).request(request).build()
     
     # Add handlers
-<<<<<<< HEAD
-    application.add_handler(CommandHandler("start", bot.start_command))
-    application.add_handler(CommandHandler("help", bot.help_command))
-    application.add_handler(CommandHandler("myid", bot.myid_command))
-    application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text_message))
-    application.add_handler(MessageHandler(filters.PHOTO, bot.handle_receipt_upload))
-=======
     application.add_handler(CommandHandler("start", bot.start_command, filters=filters.ChatType.PRIVATE))
     application.add_handler(CommandHandler("help", bot.help_command, filters=filters.ChatType.PRIVATE))
     application.add_handler(CommandHandler("myid", bot.myid_command, filters=filters.ChatType.PRIVATE))
     application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, bot.handle_text_message))
     application.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, bot.handle_receipt_upload))
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     
     # Add error handler
     async def error_handler(update, context):
@@ -15839,9 +15762,6 @@ def main():
     
     application.run_polling()
 
-<<<<<<< HEAD
-=======
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 if __name__ == '__main__':
     main()
