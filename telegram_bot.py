@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Telegram Bot for 3x-ui Panel Management
 Simple bot to create VPN clients and send configurations
@@ -27,7 +26,6 @@ from statistics_system import StatisticsSystem
 from config import BOT_CONFIG, CLIENT_DEFAULTS, DEFAULT_PANEL_CONFIG, WEBAPP_CONFIG
 from traffic_monitor import TrafficMonitor
 from persian_datetime import PersianDateTime, format_db_datetime, format_db_date
-from user_info_updater import auto_update_user_info, ensure_user_updated
 from user_info_updater import auto_update_user_info, ensure_user_updated
 from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
 from system_manager import SystemManager
@@ -100,7 +98,6 @@ class VPNBot:
             self.db = ProfessionalDatabaseManager()
         else:
             self.db = db
-            
         self.system_manager = None
         
         self.panel_manager = PanelManager()
@@ -14031,7 +14028,6 @@ class VPNBot:
                     logger.error(f"Failed to retrieve subscription link after balance add volume: {e}")
                 
                 config_message = f"\n\n🔧 **کانفیگ VPN:**\n`{subscription_link}`" if subscription_link else ""
-                
                 message = f"""
 ✅ **حجم با موفقیت اضافه شد!**
 
@@ -14039,7 +14035,6 @@ class VPNBot:
 📈 **حجم کل جدید:** {new_total_gb} گیگابایت{discount_message}💰 **مبلغ پرداخت شده:** {final_price:,} تومان
 
 سرویس شما به‌روزرسانی شد و آماده استفاده است.{config_message}
-                """
                 """
                 
                 keyboard = [
@@ -14406,7 +14401,7 @@ class VPNBot:
             
             keyboard.append([InlineKeyboardButton("◀️ بازگشت", callback_data="stats_users")])
             
-            message = f"""\U0001F195 **آخرین ثبت نام‌ها**
+            message = f"""🆕 **آخرین ثبت نام‌ها**
 
 📊 **صفحه:** `{page}/{total_pages}`
 👥 **کل ثبت نام‌های ۳۰ روز گذشته:** `{len(new_users):,} نفر`"""
@@ -15502,8 +15497,7 @@ class VPNBot:
             await query.answer("❌ خطا در رد پرداخت.", show_alert=True)
 
 
-<<<<<<< HEAD
-=======
+
     async def handle_group_selection_for_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, group_id: str):
         """Handle group selection for Pasargad panel"""
         query = update.callback_query
@@ -15663,7 +15657,7 @@ class VPNBot:
         else:
             await query.answer("❌ دستور نامعتبر.", show_alert=True)
 
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
+
 class NoProxyRequest(HTTPXRequest):
     """Custom request class to disable system proxies"""
     def __init__(self, *args, **kwargs):

@@ -213,1879 +213,6 @@ class ProfessionalDatabaseManager:
                         is_active TINYINT DEFAULT 1,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        last_checked TIMESTAMP NULL,
-                        status VARCHAR(50) DEFAULT 'unknown',
-                        subscription_url TEXT,
-                        default_protocol VARCHAR(50) DEFAULT 'vless',
-                        sale_type VARCHAR(50) DEFAULT 'gigabyte',
-<<<<<<< HEAD
-=======
-                        extra_config JSON,
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
-                        notes TEXT
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create clients table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS clients (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        panel_id INT NOT NULL,
-                        client_name VARCHAR(255) NOT NULL,
-                        client_uuid VARCHAR(255) UNIQUE NOT NULL,
-                        inbound_id INT NOT NULL,
-                        protocol VARCHAR(50) NOT NULL,
-                        expire_days INT DEFAULT 0,
-                        total_gb DOUBLE DEFAULT 0,
-                        used_gb DOUBLE DEFAULT 0,
-                        is_active TINYINT DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        expires_at TIMESTAMP NULL,
-                        last_used TIMESTAMP NULL,
-                        config_link TEXT,
-                        sub_id VARCHAR(255),
-                        product_id INT,
-                        status VARCHAR(50) DEFAULT 'active',
-                        notified_70_percent TINYINT DEFAULT 0,
-                        notified_80_percent TINYINT DEFAULT 0,
-                        exhausted_at TIMESTAMP NULL,
-                        warned_70_percent TINYINT DEFAULT 0,
-                        warned_expired TINYINT DEFAULT 0,
-                        warned_one_week TINYINT DEFAULT 0,
-                        expired_at TIMESTAMP NULL,
-                        deletion_grace_period_end TIMESTAMP NULL,
-                        cached_used_gb DOUBLE DEFAULT 0,
-                        cached_last_activity BIGINT DEFAULT 0,
-                        cached_is_online TINYINT DEFAULT 0,
-                        data_last_synced TIMESTAMP NULL,
-                        notes TEXT,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                        INDEX idx_user_id (user_id),
-                        INDEX idx_panel_id (panel_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create invoices table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS invoices (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        panel_id INT NOT NULL,
-                        gb_amount INT NOT NULL,
-                        amount INT NOT NULL,
-                        status VARCHAR(50) DEFAULT 'pending',
-                        payment_method VARCHAR(50),
-                        payment_link TEXT,
-                        order_id VARCHAR(255) UNIQUE,
-                        transaction_id VARCHAR(255),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        paid_at TIMESTAMP NULL,
-                        expires_at TIMESTAMP NULL,
-                        discount_code_id INT,
-                        discount_amount INT DEFAULT 0,
-                        original_amount INT,
-                        product_id INT,
-                        duration_days INT DEFAULT 0,
-                        purchase_type VARCHAR(50) DEFAULT 'gigabyte',
-                        notes TEXT,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                        INDEX idx_user_id (user_id),
-                        INDEX idx_order_id (order_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create balance_transactions table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS balance_transactions (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        amount INT NOT NULL,
-                        transaction_type VARCHAR(50) NOT NULL,
-                        description TEXT,
-                        reference_id VARCHAR(255),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        INDEX idx_user_id (user_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create system_logs table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS system_logs (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        level VARCHAR(50) NOT NULL,
-                        message TEXT NOT NULL,
-                        module VARCHAR(100),
-                        user_id INT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
-                        INDEX idx_created_at (created_at)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create referrals table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS referrals (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        referrer_id INT NOT NULL,
-                        referred_id INT NOT NULL,
-                        reward_amount INT DEFAULT 0,
-                        reward_paid TINYINT DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        paid_at TIMESTAMP NULL,
-                        FOREIGN KEY (referrer_id) REFERENCES users (id) ON DELETE CASCADE,
-                        FOREIGN KEY (referred_id) REFERENCES users (id) ON DELETE CASCADE
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create database_migrations table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS database_migrations (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        version VARCHAR(255) UNIQUE NOT NULL,
-                        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        description TEXT
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create discount_codes table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS discount_codes (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        code VARCHAR(255) UNIQUE NOT NULL,
-                        code_type VARCHAR(50) NOT NULL DEFAULT 'discount',
-                        discount_type VARCHAR(50) NOT NULL DEFAULT 'percentage',
-                        discount_value DECIMAL(10,2) NOT NULL,
-                        max_discount_amount INT,
-                        min_purchase_amount INT DEFAULT 0,
-                        max_uses INT DEFAULT 0,
-                        used_count INT DEFAULT 0,
-                        is_active TINYINT DEFAULT 1,
-                        valid_from TIMESTAMP NULL,
-                        valid_until TIMESTAMP NULL,
-                        applicable_to VARCHAR(50) DEFAULT 'all',
-                        created_by INT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        description TEXT,
-                        notes TEXT,
-                        FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
-                        INDEX idx_code (code),
-                        INDEX idx_is_active (is_active)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create gift_codes table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS gift_codes (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        code VARCHAR(255) UNIQUE NOT NULL,
-                        amount INT NOT NULL,
-                        max_uses INT DEFAULT 1,
-                        used_count INT DEFAULT 0,
-                        is_active TINYINT DEFAULT 1,
-                        valid_from TIMESTAMP NULL,
-                        valid_until TIMESTAMP NULL,
-                        created_by INT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        description TEXT,
-                        notes TEXT,
-                        FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
-                        INDEX idx_code (code),
-                        INDEX idx_is_active (is_active)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create discount_code_usage table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS discount_code_usage (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        code_id INT NOT NULL,
-                        user_id INT NOT NULL,
-                        invoice_id INT,
-                        amount_before_discount INT NOT NULL,
-                        discount_amount INT NOT NULL,
-                        amount_after_discount INT NOT NULL,
-                        used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (code_id) REFERENCES discount_codes (id) ON DELETE CASCADE,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL,
-                        INDEX idx_user_id (user_id),
-                        INDEX idx_code_id (code_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create gift_code_usage table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS gift_code_usage (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        code_id INT NOT NULL,
-                        user_id INT NOT NULL,
-                        amount INT NOT NULL,
-                        used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (code_id) REFERENCES gift_codes (id) ON DELETE CASCADE,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        INDEX idx_user_id (user_id),
-                        INDEX idx_code_id (code_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create tickets table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS tickets (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        subject VARCHAR(500) NOT NULL,
-                        status VARCHAR(50) DEFAULT 'open',
-                        priority VARCHAR(50) DEFAULT 'normal',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        closed_at TIMESTAMP NULL,
-                        closed_by INT NULL,
-                        last_reply_at TIMESTAMP NULL,
-                        last_reply_by INT NULL,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        FOREIGN KEY (closed_by) REFERENCES users (id) ON DELETE SET NULL,
-                        FOREIGN KEY (last_reply_by) REFERENCES users (id) ON DELETE SET NULL,
-                        INDEX idx_user_id (user_id),
-                        INDEX idx_status (status),
-                        INDEX idx_created_at (created_at)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create ticket_replies table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS ticket_replies (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        ticket_id INT NOT NULL,
-                        user_id INT NOT NULL,
-                        message TEXT NOT NULL,
-                        is_admin_reply TINYINT DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE,
-                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                        INDEX idx_ticket_id (ticket_id),
-                        INDEX idx_created_at (created_at)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create bot_texts table for customizable message templates
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS bot_texts (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        database_name VARCHAR(255) NOT NULL DEFAULT '',
-                        text_key VARCHAR(255) NOT NULL,
-                        text_category VARCHAR(100) NOT NULL,
-                        text_content TEXT NOT NULL,
-                        description TEXT,
-                        available_variables TEXT,
-                        is_active TINYINT DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        updated_by INT,
-                        FOREIGN KEY (updated_by) REFERENCES users (id) ON DELETE SET NULL,
-                        UNIQUE KEY unique_text_per_database (database_name, text_key),
-                        INDEX idx_database_name (database_name),
-                        INDEX idx_text_key (text_key),
-                        INDEX idx_category (text_category),
-                        INDEX idx_is_active (is_active)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Migration: Add database_name column if it doesn't exist (for existing databases)
-                try:
-                    # Check if column exists
-                    cursor.execute("""
-                        SELECT COUNT(*) as col_count 
-                        FROM INFORMATION_SCHEMA.COLUMNS 
-                        WHERE TABLE_SCHEMA = DATABASE() 
-                        AND TABLE_NAME = 'bot_texts' 
-                        AND COLUMN_NAME = 'database_name'
-                    """)
-                    col_exists = cursor.fetchone()['col_count'] > 0
-                    
-                    if not col_exists:
-                        cursor.execute('''
-                            ALTER TABLE bot_texts 
-                            ADD COLUMN database_name VARCHAR(255) NOT NULL DEFAULT '' AFTER id
-                        ''')
-                        conn.commit()
-                        logger.info("✅ Added database_name column to bot_texts table")
-                        
-                        # DON'T update existing rows - they might belong to other databases
-                        # Only update if database_name is empty or NULL (new rows)
-                        cursor.execute('UPDATE bot_texts SET database_name = %s WHERE (database_name = "" OR database_name IS NULL)', (self.database_name,))
-                        updated_rows = cursor.rowcount
-                        conn.commit()
-                        if updated_rows > 0:
-                            logger.info(f"✅ Updated {updated_rows} existing bot_texts rows (with empty database_name) to: {self.database_name}")
-                        else:
-                            logger.debug(f"ℹ️ No bot_texts rows with empty database_name to update for: {self.database_name}")
-                    else:
-                        logger.debug("database_name column already exists")
-                except Exception as e:
-                    logger.warning(f"Migration check for database_name column: {e}")
-                
-                # Migration: Add unique constraint if it doesn't exist
-                try:
-                    # Check if constraint exists
-                    cursor.execute("""
-                        SELECT COUNT(*) as constraint_count 
-                        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
-                        WHERE TABLE_SCHEMA = DATABASE() 
-                        AND TABLE_NAME = 'bot_texts' 
-                        AND CONSTRAINT_NAME = 'unique_text_per_database'
-                    """)
-                    constraint_exists = cursor.fetchone()['constraint_count'] > 0
-                    
-                    if not constraint_exists:
-                        # Drop old unique constraint on text_key if exists
-                        try:
-                            cursor.execute("SHOW INDEX FROM bot_texts WHERE Key_name = 'text_key'")
-                            if cursor.fetchone():
-                                cursor.execute('ALTER TABLE bot_texts DROP INDEX text_key')
-                                logger.info("✅ Dropped old unique constraint on text_key")
-                        except:
-                            pass
-                        
-                        cursor.execute('''
-                            ALTER TABLE bot_texts 
-                            ADD UNIQUE KEY unique_text_per_database (database_name, text_key)
-                        ''')
-                        conn.commit()
-                        logger.info("✅ Added unique constraint for database_name + text_key")
-                    else:
-                        logger.debug("unique_text_per_database constraint already exists")
-                except Exception as e:
-                    logger.warning(f"Migration check for unique constraint: {e}")
-                
-                # Create product_categories table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS product_categories (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        panel_id INT NOT NULL,
-                        name VARCHAR(255) NOT NULL,
-                        is_active TINYINT DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                        UNIQUE KEY unique_panel_name (panel_id, name),
-                        INDEX idx_panel_id (panel_id),
-                        INDEX idx_is_active (is_active)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Create products table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS products (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        panel_id INT NOT NULL,
-                        category_id INT,
-                        name VARCHAR(255) NOT NULL,
-                        volume_gb INT NOT NULL,
-                        duration_days INT NOT NULL,
-                        price INT NOT NULL,
-                        is_active TINYINT DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        description TEXT,
-                        FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                        FOREIGN KEY (category_id) REFERENCES product_categories (id) ON DELETE SET NULL,
-                        INDEX idx_panel_id (panel_id),
-                        INDEX idx_category_id (category_id),
-                        INDEX idx_is_active (is_active)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                
-                # Check and add columns to invoices table if needed
-                # MySQL: Check if columns exist using INFORMATION_SCHEMA
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'invoices'
-                """)
-                invoice_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'discount_code_id' not in invoice_columns:
-                    try:
-                        cursor.execute('ALTER TABLE invoices ADD COLUMN discount_code_id INT')
-                        cursor.execute('ALTER TABLE invoices ADD COLUMN discount_amount INT DEFAULT 0')
-                        cursor.execute('ALTER TABLE invoices ADD COLUMN original_amount INT')
-                    except Exception as e:
-                        logger.warning(f"Could not add discount columns to invoices: {e}")
-                
-                if 'product_id' not in invoice_columns:
-                    try:
-                        cursor.execute('ALTER TABLE invoices ADD COLUMN product_id INT')
-                        cursor.execute('ALTER TABLE invoices ADD COLUMN duration_days INT DEFAULT 0')
-                        cursor.execute('ALTER TABLE invoices ADD COLUMN purchase_type VARCHAR(50) DEFAULT "gigabyte"')
-                    except Exception as e:
-                        logger.warning(f"Could not add product columns to invoices: {e}")
-                
-                # Check if products table exists
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'products'
-                """)
-                result = cursor.fetchone()
-                products_table_exists = result['count'] > 0 if result else False
-                
-                # Create menu_buttons table if it doesn't exist
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'menu_buttons'
-                """)
-                result = cursor.fetchone()
-                if result and result['count'] == 0:
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS menu_buttons (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            database_name VARCHAR(255) NOT NULL DEFAULT '',
-                            button_key VARCHAR(255) NOT NULL,
-                            button_text VARCHAR(255) NOT NULL,
-                            callback_data VARCHAR(255) NOT NULL,
-                            button_type VARCHAR(50) DEFAULT 'callback',
-                            web_app_url TEXT,
-                            row_position INT NOT NULL DEFAULT 0,
-                            column_position INT NOT NULL DEFAULT 0,
-                            is_active TINYINT DEFAULT 1,
-                            is_visible_for_admin TINYINT DEFAULT 0,
-                            is_visible_for_users TINYINT DEFAULT 1,
-                            requires_webapp TINYINT DEFAULT 0,
-                            display_order INT DEFAULT 0,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                            UNIQUE KEY unique_button_per_database (database_name, button_key),
-                            INDEX idx_database_name (database_name),
-                            INDEX idx_button_key (button_key),
-                            INDEX idx_is_active (is_active)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    
-                    # Insert default buttons
-                    default_buttons = [
-                        ('buy_service', '🛒 خرید سرویس', 'buy_service', 'callback', None, 0, 0, 1, 0, 1, 0, 1),
-                        ('user_panel', '📊 پنل کاربری', 'user_panel', 'callback', None, 0, 1, 1, 0, 1, 0, 2),
-                        ('test_account', '🧪 اکانت تست', 'test_account', 'callback', None, 1, 0, 1, 0, 1, 0, 3),
-                        ('account_balance', '💰 موجودی', 'account_balance', 'callback', None, 1, 1, 1, 0, 1, 0, 4),
-                        ('referral_system', '🎁 دعوت دوستان', 'referral_system', 'callback', None, 2, 0, 1, 0, 1, 0, 5),
-                        ('help', '❓ راهنما و پشتیبانی', 'help', 'callback', None, 2, 1, 1, 0, 1, 0, 6),
-                        ('webapp', '🌐 ورود به وب اپلیکیشن', 'webapp', 'webapp', None, 3, 0, 1, 0, 1, 1, 7),
-                        ('admin_panel', '⚙️ پنل مدیریت', 'admin_panel', 'callback', None, 4, 0, 1, 1, 0, 0, 8),
-                    ]
-                    
-                    cursor.executemany('''
-                        INSERT INTO menu_buttons 
-                        (database_name, button_key, button_text, callback_data, button_type, web_app_url, row_position, column_position, 
-                         is_active, is_visible_for_admin, is_visible_for_users, requires_webapp, display_order)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ''', [(self.database_name, *btn) for btn in default_buttons])
-                    logger.info("✅ Created menu_buttons table with default buttons")
-                
-                # Create reserved_services table if it doesn't exist
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'reserved_services'
-                """)
-                result = cursor.fetchone()
-                if result and result['count'] == 0:
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS reserved_services (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            client_id INT NOT NULL,
-                            product_id INT NOT NULL,
-                            volume_gb INT NOT NULL,
-                            duration_days INT NOT NULL,
-                            reserved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            activated_at TIMESTAMP NULL,
-                            status VARCHAR(50) DEFAULT 'reserved',
-                            FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
-                            FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    logger.info("✅ Created reserved_services table")
-                
-                # Run migrations
-                self._run_migrations(conn)
-                
-                conn.commit()
-                logger.info("Database initialized successfully")
-                
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            raise
-    
-    def _run_migrations(self, conn):
-        """Run database migrations"""
-        try:
-            cursor = conn.cursor(dictionary=True)
-            
-            # Migration 1: Add subscription_url to panels table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.0_add_subscription_url'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add subscription_url to panels table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'panels'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'subscription_url' not in columns:
-                    cursor.execute('ALTER TABLE panels ADD COLUMN subscription_url TEXT')
-                    logger.info("✅ Added subscription_url column to panels table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.0_add_subscription_url', 'Add subscription_url field to panels table for subscription link')
-                ''')
-                logger.info("✅ Migration v1.0_add_subscription_url completed")
-            
-            # Migration 2: Add sub_id to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.1_add_client_sub_id'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add sub_id to clients table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'sub_id' not in columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN sub_id VARCHAR(255)')
-                    logger.info("✅ Added sub_id column to clients table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.1_add_client_sub_id', 'Add sub_id field to clients table for subscription tracking')
-                ''')
-                logger.info("✅ Migration v1.1_add_client_sub_id completed")
-            
-            # Migration 3: Add panel_type to panels table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.2_add_panel_type'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add panel_type to panels table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'panels'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'panel_type' not in columns:
-                    cursor.execute('ALTER TABLE panels ADD COLUMN panel_type VARCHAR(50) DEFAULT "3x-ui"')
-                    logger.info("✅ Added panel_type column to panels table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.2_add_panel_type', 'Add panel_type field to panels table to support multiple panel types (3x-ui, Marzban)')
-                ''')
-                logger.info("✅ Migration v1.2_add_panel_type completed")
-            
-            # Migration 4: Add receipt_image to invoices table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.3_add_receipt_image'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add receipt_image to invoices table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'invoices'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'receipt_image' not in columns:
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN receipt_image TEXT')
-                    logger.info("✅ Added receipt_image column to invoices table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.3_add_receipt_image', 'Add receipt_image field to invoices table for card to card payments')
-                ''')
-                logger.info("✅ Migration v1.3_add_receipt_image completed")
-            
-            # Migration 5: Add notified_70_percent and status to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.4_add_service_monitoring_fields'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add notified_70_percent and status to clients table")
-                
-                # Check if columns already exist
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'notified_70_percent' not in columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN notified_70_percent TINYINT DEFAULT 0')
-                    logger.info("✅ Added notified_70_percent column to clients table")
-                
-                if 'status' not in columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN status VARCHAR(50) DEFAULT "active"')
-                    logger.info("✅ Added status column to clients table")
-                
-                if 'exhausted_at' not in columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN exhausted_at TIMESTAMP')
-                    logger.info("✅ Added exhausted_at column to clients table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.4_add_service_monitoring_fields', 'Add notified_70_percent, status, and exhausted_at fields to clients table for service monitoring')
-                ''')
-                logger.info("✅ Migration v1.4_add_service_monitoring_fields completed")
-
-            # Migration 6: Add notified_exhausted to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.5_add_notified_exhausted'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add notified_exhausted to clients table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'notified_exhausted' not in columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN notified_exhausted TINYINT DEFAULT 0')
-                    logger.info("✅ Added notified_exhausted column to clients table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.5_add_notified_exhausted', 'Add notified_exhausted field to clients table to prevent duplicate notifications')
-                ''')
-                logger.info("✅ Migration v1.5_add_notified_exhausted completed")
-            
-            # Migration 4: Add default_protocol to panels table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.3_add_default_protocol'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add default_protocol to panels table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'panels'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'default_protocol' not in columns:
-                    cursor.execute('ALTER TABLE panels ADD COLUMN default_protocol VARCHAR(50) DEFAULT "vless"')
-                    logger.info("✅ Added default_protocol column to panels table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.3_add_default_protocol', 'Add default_protocol field to panels table for Marzban protocol selection')
-                ''')
-                logger.info("✅ Migration v1.3_add_default_protocol completed")
-            
-            # Migration 6: Add discount and gift code system
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.5_add_discount_gift_codes'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add discount and gift code system")
-                
-                # Tables are created in init_database, but we need to ensure columns exist
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'invoices'
-                """)
-                invoice_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                if 'discount_code_id' not in invoice_columns:
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN discount_code_id INTEGER')
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN discount_amount INTEGER DEFAULT 0')
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN original_amount INTEGER')
-                    logger.info("✅ Added discount columns to invoices table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.5_add_discount_gift_codes', 'Add discount codes and gift codes system with usage tracking')
-                ''')
-                logger.info("✅ Migration v1.5_add_discount_gift_codes completed")
-            
-            # Migration 7: Add sale_type to panels and product management tables
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.6_add_product_system'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add sale_type to panels and product management system")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'panels'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'sale_type' not in columns:
-                    cursor.execute('ALTER TABLE panels ADD COLUMN sale_type VARCHAR(50) DEFAULT "gigabyte"')
-                    logger.info("✅ Added sale_type column to panels table")
-                
-                # Tables are created in init_database, but we verify they exist
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'product_categories'
-                """)
-                if not cursor.fetchone():
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS product_categories (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            panel_id INT NOT NULL,
-                            name VARCHAR(255) NOT NULL,
-                            is_active TINYINT DEFAULT 1,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                            FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                            UNIQUE KEY unique_panel_name (panel_id, name)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    logger.info("✅ Created product_categories table")
-                
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'products'
-                """)
-                if not cursor.fetchone():
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS products (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            panel_id INT NOT NULL,
-                            category_id INT,
-                            name VARCHAR(255) NOT NULL,
-                            volume_gb INT NOT NULL,
-                            duration_days INT NOT NULL,
-                            price INT NOT NULL,
-                            is_active TINYINT DEFAULT 1,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                            description TEXT,
-                            FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                            FOREIGN KEY (category_id) REFERENCES product_categories (id) ON DELETE SET NULL
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    logger.info("✅ Created products table")
-                
-                # Create indexes (check if they exist first)
-                try:
-                    cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_categories' AND INDEX_NAME = 'idx_product_categories_panel'")
-                    if cursor.fetchone()['count'] == 0:
-                        cursor.execute('CREATE INDEX idx_product_categories_panel ON product_categories(panel_id)')
-                except:
-                    pass
-                
-                try:
-                    cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'product_categories' AND INDEX_NAME = 'idx_product_categories_active'")
-                    if cursor.fetchone()['count'] == 0:
-                        cursor.execute('CREATE INDEX idx_product_categories_active ON product_categories(is_active)')
-                except:
-                    pass
-                
-                try:
-                    cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products' AND INDEX_NAME = 'idx_products_panel'")
-                    if cursor.fetchone()['count'] == 0:
-                        cursor.execute('CREATE INDEX idx_products_panel ON products(panel_id)')
-                except:
-                    pass
-                
-                try:
-                    cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products' AND INDEX_NAME = 'idx_products_category'")
-                    if cursor.fetchone()['count'] == 0:
-                        cursor.execute('CREATE INDEX idx_products_category ON products(category_id)')
-                except:
-                    pass
-                
-                try:
-                    cursor.execute("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products' AND INDEX_NAME = 'idx_products_active'")
-                    if cursor.fetchone()['count'] == 0:
-                        cursor.execute('CREATE INDEX idx_products_active ON products(is_active)')
-                except:
-                    pass
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.6_add_product_system', 'Add sale_type to panels and product management system (categories and products)')
-                ''')
-                logger.info("✅ Migration v1.6_add_product_system completed")
-            
-            # Migration 8: Add product support to invoices
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.7_add_product_invoice_fields'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add product_id and duration_days to invoices table")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'invoices'
-                """)
-                invoice_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'product_id' not in invoice_columns:
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN product_id INTEGER')
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN duration_days INTEGER DEFAULT 0')
-                    cursor.execute('ALTER TABLE invoices ADD COLUMN purchase_type VARCHAR(50) DEFAULT "gigabyte"')
-                    logger.info("✅ Added product_id, duration_days, and purchase_type columns to invoices table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.7_add_product_invoice_fields', 'Add product_id, duration_days, and purchase_type fields to invoices table for product purchases')
-                ''')
-                logger.info("✅ Migration v1.7_add_product_invoice_fields completed")
-            
-            # Migration 9: Add product_id to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.8_add_product_id_to_clients'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add product_id to clients table")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'product_id' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN product_id INTEGER')
-                    logger.info("✅ Added product_id column to clients table")
-                    # Note: SQLite does not support adding FOREIGN KEY constraints via ALTER TABLE
-                    # The foreign key relationship is enforced at the application level
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.8_add_product_id_to_clients', 'Add product_id field to clients table for product-based services')
-                ''')
-                logger.info("✅ Migration v1.8_add_product_id_to_clients completed")
-            
-            # Migration 10: Add cached data fields to clients table for performance optimization
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.9_add_client_cache_fields'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add cached data fields to clients table")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'cached_used_gb' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN cached_used_gb REAL DEFAULT 0')
-                    logger.info("✅ Added cached_used_gb column to clients table")
-                
-                if 'cached_last_activity' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN cached_last_activity BIGINT DEFAULT 0')
-                    logger.info("✅ Added cached_last_activity column to clients table")
-                else:
-                    # Check if column type is INT and needs to be changed to BIGINT
-                    cursor.execute("""
-                        SELECT DATA_TYPE 
-                        FROM INFORMATION_SCHEMA.COLUMNS 
-                        WHERE TABLE_SCHEMA = DATABASE() 
-                        AND TABLE_NAME = 'clients' 
-                        AND COLUMN_NAME = 'cached_last_activity'
-                    """)
-                    result = cursor.fetchone()
-                    if result and result['DATA_TYPE'] == 'int':
-                        cursor.execute('ALTER TABLE clients MODIFY COLUMN cached_last_activity BIGINT DEFAULT 0')
-                        logger.info("✅ Changed cached_last_activity column type from INT to BIGINT")
-                
-                if 'cached_is_online' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN cached_is_online TINYINT DEFAULT 0')
-                    logger.info("✅ Added cached_is_online column to clients table")
-                
-                if 'data_last_synced' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN data_last_synced TIMESTAMP')
-                    logger.info("✅ Added data_last_synced column to clients table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.9_add_client_cache_fields', 'Add cached data fields to clients table for performance optimization (used_gb, last_activity, is_online, sync timestamp)')
-                ''')
-                logger.info("✅ Migration v1.9_add_client_cache_fields completed")
-            
-            # Migration 11: Add menu buttons layout system
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.11_add_menu_buttons_layout'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add menu buttons layout system")
-                
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS menu_buttons (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        database_name VARCHAR(255) NOT NULL DEFAULT '',
-                        button_key VARCHAR(255) NOT NULL,
-                        button_text VARCHAR(255) NOT NULL,
-                        callback_data VARCHAR(255) NOT NULL,
-                        button_type VARCHAR(50) DEFAULT 'callback',
-                        web_app_url TEXT,
-                        row_position INT NOT NULL DEFAULT 0,
-                        column_position INT NOT NULL DEFAULT 0,
-                        is_active TINYINT DEFAULT 1,
-                        is_visible_for_admin TINYINT DEFAULT 0,
-                        is_visible_for_users TINYINT DEFAULT 1,
-                        requires_webapp TINYINT DEFAULT 0,
-                        display_order INT DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        UNIQUE KEY unique_button_per_database (database_name, button_key),
-                        INDEX idx_database_name (database_name),
-                        INDEX idx_button_key (button_key),
-                        INDEX idx_is_active (is_active)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ''')
-                logger.info("✅ Created menu_buttons table")
-                
-                # Insert default buttons only if table is empty for this database
-                cursor.execute('SELECT COUNT(*) as count FROM menu_buttons WHERE database_name = %s', (self.database_name,))
-                button_count = cursor.fetchone()['count']
-                
-                if button_count == 0:
-                    default_buttons = [
-                        ('buy_service', '🛒 خرید سرویس', 'buy_service', 'callback', None, 0, 0, 1, 0, 1, 0, 1),
-                        ('user_panel', '📊 پنل کاربری', 'user_panel', 'callback', None, 0, 1, 1, 0, 1, 0, 2),
-                        ('test_account', '🧪 اکانت تست', 'test_account', 'callback', None, 1, 0, 1, 0, 1, 0, 3),
-                        ('account_balance', '💰 موجودی', 'account_balance', 'callback', None, 1, 1, 1, 0, 1, 0, 4),
-                        ('referral_system', '🎁 دعوت دوستان', 'referral_system', 'callback', None, 2, 0, 1, 0, 1, 0, 5),
-                        ('help', '❓ راهنما و پشتیبانی', 'help', 'callback', None, 2, 1, 1, 0, 1, 0, 6),
-                        ('webapp', '🌐 ورود به وب اپلیکیشن', 'webapp', 'webapp', None, 3, 0, 1, 0, 1, 1, 7),
-                        ('admin_panel', '⚙️ پنل مدیریت', 'admin_panel', 'callback', None, 4, 0, 1, 1, 0, 0, 8),
-                    ]
-                    
-                    cursor.executemany('''
-                        INSERT INTO menu_buttons 
-                        (database_name, button_key, button_text, callback_data, button_type, web_app_url, row_position, column_position, 
-                         is_active, is_visible_for_admin, is_visible_for_users, requires_webapp, display_order)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ''', [(self.database_name, *btn) for btn in default_buttons])
-                    logger.info("✅ Inserted default menu buttons")
-                else:
-                    logger.info(f"Menu buttons already exist ({button_count} buttons)")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.11_add_menu_buttons_layout', 'Add menu buttons layout system for customizable main menu')
-                ''')
-                logger.info("✅ Migration v1.11_add_menu_buttons_layout completed")
-            
-            # Migration 12: Change total_gb from INT to DOUBLE to support decimal values
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.12_change_total_gb_to_double'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Change total_gb from INT to DOUBLE")
-                
-                cursor.execute("""
-                    SELECT DATA_TYPE 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients' 
-                    AND COLUMN_NAME = 'total_gb'
-                """)
-                result = cursor.fetchone()
-                if result and result['DATA_TYPE'] in ('int', 'integer'):
-                    cursor.execute('ALTER TABLE clients MODIFY COLUMN total_gb DOUBLE DEFAULT 0')
-                    logger.info("✅ Changed total_gb column type from INT to DOUBLE")
-                else:
-                    logger.info("✅ total_gb column is already DOUBLE or doesn't exist")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.12_change_total_gb_to_double', 'Change total_gb column from INT to DOUBLE to support decimal values (for panel change feature)')
-                ''')
-                logger.info("✅ Migration v1.12_change_total_gb_to_double completed")
-            
-            # Migration 12.5: Add database_name column to menu_buttons for multi-bot support
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.12.5_add_database_name_to_menu_buttons'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add database_name column to menu_buttons for multi-bot support")
-                
-                # Check if column exists
-                cursor.execute("""
-                    SELECT COUNT(*) as col_count 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'menu_buttons' 
-                    AND COLUMN_NAME = 'database_name'
-                """)
-                col_exists = cursor.fetchone()['col_count'] > 0
-                
-                if not col_exists:
-                    cursor.execute('''
-                        ALTER TABLE menu_buttons 
-                        ADD COLUMN database_name VARCHAR(255) NOT NULL DEFAULT '' AFTER id
-                    ''')
-                    conn.commit()
-                    logger.info("✅ Added database_name column to menu_buttons table")
-                    
-                    # Update existing rows with current database name
-                    cursor.execute('UPDATE menu_buttons SET database_name = %s WHERE (database_name = "" OR database_name IS NULL)', (self.database_name,))
-                    updated_rows = cursor.rowcount
-                    conn.commit()
-                    if updated_rows > 0:
-                        logger.info(f"✅ Updated {updated_rows} existing menu_buttons rows to database_name: {self.database_name}")
-                    
-                    # Add unique constraint for database_name + button_key
-                    try:
-                        cursor.execute("""
-                            SELECT COUNT(*) as constraint_count 
-                            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
-                            WHERE TABLE_SCHEMA = DATABASE() 
-                            AND TABLE_NAME = 'menu_buttons' 
-                            AND CONSTRAINT_NAME = 'unique_button_per_database'
-                        """)
-                        constraint_exists = cursor.fetchone()['constraint_count'] > 0
-                        
-                        if not constraint_exists:
-                            # Drop old unique constraint on button_key if exists
-                            try:
-                                cursor.execute("""
-                                    SELECT CONSTRAINT_NAME 
-                                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
-                                    WHERE TABLE_SCHEMA = DATABASE() 
-                                    AND TABLE_NAME = 'menu_buttons' 
-                                    AND CONSTRAINT_TYPE = 'UNIQUE'
-                                    AND CONSTRAINT_NAME LIKE '%button_key%'
-                                """)
-                                old_constraint = cursor.fetchone()
-                                if old_constraint:
-                                    cursor.execute(f"ALTER TABLE menu_buttons DROP INDEX `{old_constraint['CONSTRAINT_NAME']}`")
-                                    logger.info(f"✅ Dropped old unique constraint on button_key")
-                            except Exception as e:
-                                logger.debug(f"Could not drop old constraint (may not exist): {e}")
-                            
-                            # Add new unique constraint
-                            cursor.execute('''
-                                ALTER TABLE menu_buttons 
-                                ADD UNIQUE KEY unique_button_per_database (database_name, button_key)
-                            ''')
-                            conn.commit()
-                            logger.info("✅ Added unique constraint for database_name + button_key")
-                    except Exception as e:
-                        logger.warning(f"Could not add unique constraint: {e}")
-                    
-                    # Add index for database_name
-                    try:
-                        cursor.execute("""
-                            SELECT COUNT(*) as index_count 
-                            FROM INFORMATION_SCHEMA.STATISTICS 
-                            WHERE TABLE_SCHEMA = DATABASE() 
-                            AND TABLE_NAME = 'menu_buttons' 
-                            AND INDEX_NAME = 'idx_database_name'
-                        """)
-                        index_exists = cursor.fetchone()['index_count'] > 0
-                        
-                        if not index_exists:
-                            cursor.execute('CREATE INDEX idx_database_name ON menu_buttons (database_name)')
-                            conn.commit()
-                            logger.info("✅ Added index on database_name column")
-                    except Exception as e:
-                        logger.warning(f"Could not add index: {e}")
-                else:
-                    logger.debug("database_name column already exists in menu_buttons")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.12.5_add_database_name_to_menu_buttons', 'Add database_name column to menu_buttons for multi-bot support')
-                ''')
-                conn.commit()
-                logger.info("✅ Migration v1.12.5_add_database_name_to_menu_buttons completed")
-            
-            # Migration 13: Add panel_inbounds table for inbound management
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.13_add_panel_inbounds'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add panel_inbounds table for inbound management")
-                
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'panel_inbounds'
-                """)
-                result = cursor.fetchone()
-                if result and result['count'] == 0:
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS panel_inbounds (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            panel_id INT NOT NULL,
-                            inbound_id INT NOT NULL,
-                            inbound_name VARCHAR(255),
-                            inbound_protocol VARCHAR(50),
-                            inbound_port INT,
-                            is_enabled TINYINT DEFAULT 1,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                            FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
-                            UNIQUE KEY unique_panel_inbound (panel_id, inbound_id),
-                            INDEX idx_panel_id (panel_id),
-                            INDEX idx_inbound_id (inbound_id),
-                            INDEX idx_is_enabled (is_enabled)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    logger.info("✅ Created panel_inbounds table")
-                    logger.info("ℹ️ Note: Inbounds will be synced when panels are accessed or managed")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.13_add_panel_inbounds', 'Add panel_inbounds table for managing inbound status (enabled/disabled) and tracking inbound information')
-                ''')
-                logger.info("✅ Migration v1.13_add_panel_inbounds completed")
-            
-            # Migration 14: Add system_settings table for test account configuration
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.14_add_system_settings'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add system_settings table for test account configuration")
-                
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'system_settings'
-                """)
-                result = cursor.fetchone()
-                if result and result['count'] == 0:
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS system_settings (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            setting_key VARCHAR(255) UNIQUE NOT NULL,
-                            setting_value TEXT,
-                            description TEXT,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                            INDEX idx_setting_key (setting_key)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    logger.info("✅ Created system_settings table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.14_add_system_settings', 'Add system_settings table for storing system-wide settings like test account panel and inbound configuration')
-                ''')
-                logger.info("✅ Migration v1.14_add_system_settings completed")
-            
-            # Migration 11: Add reserved services and warning system
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.10_add_reserved_services_and_warnings'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add reserved services table and warning fields")
-                
-                # Create reserved_services table
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'reserved_services'
-                """)
-                result = cursor.fetchone()
-                if result and result['count'] == 0:
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS reserved_services (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            client_id INT NOT NULL,
-                            product_id INT NOT NULL,
-                            volume_gb INT NOT NULL,
-                            duration_days INT NOT NULL,
-                            reserved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            activated_at TIMESTAMP NULL,
-                            status VARCHAR(50) DEFAULT 'reserved',
-                            FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
-                            FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ''')
-                    logger.info("✅ Created reserved_services table")
-                
-                # Check if reserved_services table exists and add missing columns if needed
-                cursor.execute("""
-                    SELECT COUNT(*) as count 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'reserved_services'
-                """)
-                reserved_table_exists = cursor.fetchone()['count'] > 0
-                
-                if reserved_table_exists:
-                    cursor.execute("""
-                        SELECT COLUMN_NAME 
-                        FROM INFORMATION_SCHEMA.COLUMNS 
-                        WHERE TABLE_SCHEMA = DATABASE() 
-                        AND TABLE_NAME = 'reserved_services'
-                    """)
-                    reserved_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                    
-                    if 'status' not in reserved_columns:
-                        cursor.execute('ALTER TABLE reserved_services ADD COLUMN status VARCHAR(50) DEFAULT "reserved"')
-                        logger.info("✅ Added status column to reserved_services table")
-                
-                # Add warning fields to clients table
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'warned_70_percent' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN warned_70_percent TINYINT DEFAULT 0')
-                    logger.info("✅ Added warned_70_percent column to clients table")
-                
-                if 'warned_expired' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN warned_expired TINYINT DEFAULT 0')
-                    logger.info("✅ Added warned_expired column to clients table")
-                
-                if 'warned_one_week' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN warned_one_week TINYINT DEFAULT 0')
-                    logger.info("✅ Added warned_one_week column to clients table")
-                
-                if 'expired_at' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN expired_at TIMESTAMP')
-                    logger.info("✅ Added expired_at column to clients table")
-                
-                if 'deletion_grace_period_end' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN deletion_grace_period_end TIMESTAMP')
-                    logger.info("✅ Added deletion_grace_period_end column to clients table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.10_add_reserved_services_and_warnings', 'Add reserved services table and warning/expiration fields for service management')
-                ''')
-                logger.info("✅ Migration v1.10_add_reserved_services_and_warnings completed")
-                
-                conn.commit()
-            
-            # Migration 12: Add cached_remaining_days to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.12_add_cached_remaining_days'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add cached_remaining_days to clients table")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'cached_remaining_days' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN cached_remaining_days INT DEFAULT NULL')
-                    logger.info("✅ Added cached_remaining_days column to clients table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.12_add_cached_remaining_days', 'Add cached_remaining_days field to store remaining days until expiration from panel')
-                ''')
-                logger.info("✅ Migration v1.12_add_cached_remaining_days completed")
-            
-            # Migration 13: Add notified_80_percent to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.13_add_notified_80_percent'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add notified_80_percent to clients table")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'notified_80_percent' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN notified_80_percent TINYINT DEFAULT 0')
-                    logger.info("✅ Added notified_80_percent column to clients table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.13_add_notified_80_percent', 'Add notified_80_percent field to clients table for 80% usage notification tracking')
-                ''')
-                logger.info("✅ Migration v1.13_add_notified_80_percent completed")
-            
-            # Migration 14: Add monitoring fields (last_activity, is_online, remaining_days) to clients table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.14_add_monitoring_fields'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add monitoring fields (last_activity, is_online, remaining_days) to clients table")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'last_activity' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN last_activity BIGINT DEFAULT 0')
-                    logger.info("✅ Added last_activity column to clients table")
-                
-                if 'is_online' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN is_online TINYINT DEFAULT 0')
-                    logger.info("✅ Added is_online column to clients table")
-                
-                if 'remaining_days' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN remaining_days INT DEFAULT NULL')
-                    logger.info("✅ Added remaining_days column to clients table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.14_add_monitoring_fields', 'Add last_activity, is_online, and remaining_days fields to clients table for real-time monitoring data')
-                ''')
-                logger.info("✅ Migration v1.14_add_monitoring_fields completed")
-            
-            # Migration 15: Add comprehensive warning tracking fields
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.15_add_comprehensive_warnings'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add comprehensive warning tracking fields")
-                
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'clients'
-                """)
-                client_columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'warned_100_percent' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN warned_100_percent TINYINT DEFAULT 0')
-                    logger.info("✅ Added warned_100_percent column to clients table")
-                
-                if 'warned_three_days' not in client_columns:
-                    cursor.execute('ALTER TABLE clients ADD COLUMN warned_three_days TINYINT DEFAULT 0')
-                    logger.info("✅ Added warned_three_days column to clients table")
-                
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.15_add_comprehensive_warnings', 'Add warned_100_percent and warned_three_days fields for comprehensive monitoring and warning tracking')
-                ''')
-                logger.info("✅ Migration v1.15_add_comprehensive_warnings completed")
-                conn.commit()
-<<<<<<< HEAD
-=======
-
-            # Migration 16: Add extra_config to panels table
-            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.16_add_extra_config'")
-            if not cursor.fetchone():
-                logger.info("Running migration: Add extra_config to panels table")
-                
-                # Check if column already exists
-                cursor.execute("""
-                    SELECT COLUMN_NAME 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_SCHEMA = DATABASE() 
-                    AND TABLE_NAME = 'panels'
-                """)
-                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
-                
-                if 'extra_config' not in columns:
-                    cursor.execute('ALTER TABLE panels ADD COLUMN extra_config JSON')
-                    logger.info("✅ Added extra_config column to panels table")
-                
-                # Mark migration as applied
-                cursor.execute('''
-                    INSERT INTO database_migrations (version, description)
-                    VALUES ('v1.16_add_extra_config', 'Add extra_config JSON field to panels table for custom panel settings')
-                ''')
-                logger.info("✅ Migration v1.16_add_extra_config completed")
-                conn.commit()
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
-            
-        except Exception as e:
-            logger.error(f"Error running migrations: {e}")
-            raise
-    
-    def create_backup(self, backup_name: str = None):
-        """Create a backup of the database"""
-        try:
-            if not backup_name:
-                backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
-            backup_path = os.path.join(self.backup_dir, f"{backup_name}.sql")
-            # For MySQL, we'll use mysqldump command
-            import subprocess
-            try:
-                subprocess.run([
-                    'mysqldump',
-                    f'--host={self.db_config["host"]}',
-                    f'--port={self.db_config["port"]}',
-                    f'--user={self.db_config["user"]}',
-                    f'--password={self.db_config["password"]}',
-                    self.database_name
-                ], stdout=open(backup_path, 'w', encoding='utf-8'), check=True)
-                logger.info(f"MySQL database backup created: {backup_path}")
-                return backup_path
-            except Exception as e:
-                logger.error(f"Failed to create MySQL backup using mysqldump: {e}")
-                logger.info("Attempting manual backup...")
-                # Manual backup - export all tables
-                with self.get_connection() as conn:
-                    cursor = conn.cursor(dictionary=True)
-                    # Get all tables
-                    cursor.execute("""
-                        SELECT TABLE_NAME 
-                        FROM INFORMATION_SCHEMA.TABLES 
-                        WHERE TABLE_SCHEMA = DATABASE()
-                    """)
-                    tables = [row['TABLE_NAME'] for row in cursor.fetchall()]
-                    
-                    backup_sql = []
-                    for table in tables:
-                        # SECURITY: Validate table name to prevent SQL injection
-                        import re
-                        if not re.match(r'^[a-zA-Z0-9_\-]+$', table):
-                            logger.warning(f"Skipping invalid table name: {table}")
-                            continue
-                        # SECURITY: Table name already validated above, just escape backticks
-                        safe_table = table.replace('`', '``')
-                        cursor.execute("SELECT * FROM `{}`".format(safe_table))
-                        rows = cursor.fetchall()
-                        if rows:
-                            columns = list(rows[0].keys())
-                            # SECURITY: Validate and escape column names
-                            safe_columns = []
-                            for c in columns:
-                                if not re.match(r'^[a-zA-Z0-9_\-]+$', c):
-                                    logger.warning(f"Skipping invalid column name: {c}")
-                                    continue
-                                safe_columns.append(f"`{c.replace('`', '``')}`")
-                            if not safe_columns:
-                                continue
-                            backup_sql.append(f"INSERT INTO `{safe_table}` ({', '.join(safe_columns)}) VALUES")
-                            for row in rows:
-                                values = []
-                                for col in columns:
-                                    val = row[col]
-                                    if val is None:
-                                        values.append('NULL')
-                                    elif isinstance(val, (int, float)):
-                                        values.append(str(val))
-                                    else:
-                                        values.append(f"'{str(val).replace(chr(39), chr(39)+chr(39))}'")
-                                backup_sql.append(f"({', '.join(values)}),")
-                            backup_sql[-1] = backup_sql[-1].rstrip(',') + ';'
-                    
-                    with open(backup_path, 'w', encoding='utf-8') as f:
-                        f.write('\n'.join(backup_sql))
-                    logger.info(f"MySQL database backup created (manual): {backup_path}")
-                    return backup_path
-        except Exception as e:
-            logger.error(f"Failed to create backup: {e}")
-            return None
-    
-    def restore_backup(self, backup_path: str):
-        """Restore database from backup"""
-        try:
-            # For MySQL, restore from SQL file
-            import subprocess
-            try:
-                with open(backup_path, 'r', encoding='utf-8') as f:
-                    sql_content = f.read()
-                
-                with self.get_connection() as conn:
-                    cursor = conn.cursor()
-                    # Execute SQL statements
-                    for statement in sql_content.split(';'):
-                        statement = statement.strip()
-                        if statement:
-                            cursor.execute(statement)
-                    conn.commit()
-                
-                logger.info(f"MySQL database restored from: {backup_path}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to restore MySQL backup: {e}")
-                return False
-        except Exception as e:
-            logger.error(f"Failed to restore backup: {e}")
-            return False
-    
-    def log_system_event(self, level: str, message: str, module: str = None, user_id: int = None):
-        """Log system events to database"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                
-                # If user_id is provided, verify it exists or try to get database id from telegram_id
-                db_user_id = None
-                if user_id is not None:
-                    # First check if it's a valid database user id
-                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                    if cursor.fetchone():
-                        db_user_id = user_id
-                    else:
-                        # Try to get database id from telegram_id
-                        cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (user_id,))
-                        row = cursor.fetchone()
-                        if row:
-                            db_user_id = row[0]
-                        # If still not found, leave it as None (allowed by FOREIGN KEY constraint)
-                
-                cursor.execute('''
-                    INSERT INTO system_logs (level, message, module, user_id)
-                    VALUES (%s, %s, %s, %s)
-                ''', (level, message, module, db_user_id))
-                conn.commit()
-        except Exception as e:
-            # Don't log system event errors to avoid infinite loops
-            logger.error(f"Failed to log system event: {e}")
-    
-    # User Management Methods
-    def add_user(self, telegram_id: int, username: str = None, 
-                 first_name: str = None, last_name: str = None, 
-                 is_admin: bool = False, referred_by: int = None, 
-                 referral_code: str = None) -> int:
-        """Add or update user information"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                
-                # Check if user exists
-                cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-                existing_user = cursor.fetchone()
-                
-                if existing_user:
-                    # Update existing user
-                    # If user doesn't have referral_code, generate one
-                    if not referral_code:
-                        # Check if user already has a referral code
-                        cursor.execute('SELECT referral_code FROM users WHERE telegram_id = %s', (telegram_id,))
-                        existing_code = cursor.fetchone()
-                        if existing_code and existing_code.get('referral_code'):
-                            referral_code = existing_code['referral_code']
-                        else:
-                            # Generate new referral code
-                            referral_code = self.generate_referral_code()
-                    
-                    cursor.execute('''
-                        UPDATE users SET 
-                        username = COALESCE(%s, username),
-                        first_name = COALESCE(%s, first_name),
-                        last_name = COALESCE(%s, last_name),
-                        referral_code = COALESCE(%s, referral_code),
-                        last_activity = CURRENT_TIMESTAMP
-                        WHERE telegram_id = %s
-                    ''', (username, first_name, last_name, referral_code, telegram_id))
-                    user_id = existing_user['id']
-                else:
-                    # Create new user
-                    # If no referral_code provided, generate one
-                    if not referral_code:
-                        referral_code = self.generate_referral_code()
-                    
-                    cursor.execute('''
-                        INSERT INTO users (telegram_id, username, first_name, last_name, is_admin, referred_by, referral_code)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ''', (telegram_id, username, first_name, last_name, is_admin, referred_by, referral_code))
-                    user_id = cursor.lastrowid
-                
-                conn.commit()
-                self.log_system_event('INFO', f'User {telegram_id} processed', 'user_management', user_id)
-                return user_id
-                
-        except Exception as e:
-            logger.error(f"Error adding user: {e}")
-            self.log_system_event('ERROR', f'Failed to add user {telegram_id}: {e}', 'user_management')
-            return 0
-    
-    def get_user(self, telegram_id: int) -> Optional[Dict]:
-        """Get user by telegram ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
-                row = cursor.fetchone()
-                
-                if row:
-                    return dict(row)
-                return None
-        except Exception as e:
-            logger.error(f"Error getting user: {e}")
-            return None
-    
-    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
-        """Get user by internal database ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-                row = cursor.fetchone()
-                
-                if row:
-                    return dict(row)
-                return None
-        except Exception as e:
-            logger.error(f"Error getting user by ID: {e}")
-            return None
-    
-    def update_user_balance(self, telegram_id: int, amount: int, transaction_type: str, description: str = None) -> bool:
-        """Update user balance and log transaction"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                
-                # Get current balance
-                cursor.execute('SELECT balance FROM users WHERE telegram_id = %s', (telegram_id,))
-                current_balance = cursor.fetchone()
-                
-                if not current_balance:
-                    return False
-                
-                new_balance = current_balance['balance'] + amount
-                
-                # Update balance
-                cursor.execute('UPDATE users SET balance = %s WHERE telegram_id = %s', (new_balance, telegram_id))
-                
-                # Log transaction
-                cursor.execute('''
-                    INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
-                    VALUES ((SELECT id FROM users WHERE telegram_id = %s), %s, %s, %s)
-                ''', (telegram_id, amount, transaction_type, description))
-                
-                conn.commit()
-                self.log_system_event('INFO', f'Balance updated for user {telegram_id}: {amount}', 'balance_management', telegram_id)
-                return True
-                
-        except Exception as e:
-            logger.error(f"Error updating user balance: {e}")
-            return False
-
-    def add_balance(self, user_id: int, amount: int, transaction_type: str, description: str = None) -> bool:
-        """Add balance to user (using Internal ID)"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                
-                # Update balance
-                cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount, user_id))
-                
-                # Log transaction
-                cursor.execute('''
-                    INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
-                    VALUES (%s, %s, %s, %s)
-                ''', (user_id, amount, transaction_type, description))
-                
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error adding balance: {e}")
-            return False
-    
-    def deduct_balance(self, user_id: int, amount: int, transaction_type: str, invoice_id: int = None) -> bool:
-        """Deduct balance from user (using Internal ID)"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                
-                # Update balance (subtract)
-                cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount, user_id))
-                
-                # Log transaction
-                description = f"Payment for invoice #{invoice_id}" if invoice_id else "Balance deduction"
-                cursor.execute('''
-                    INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
-                    VALUES (%s, %s, %s, %s)
-                ''', (user_id, -amount, transaction_type, description))
-                
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error deducting balance: {e}")
-            return False
-    
-    def get_user_balance(self, telegram_id: int) -> int:
-        """Get user balance"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute('SELECT balance FROM users WHERE telegram_id = %s', (telegram_id,))
-                row = cursor.fetchone()
-                return row['balance'] if row else 0
-        except Exception as e:
-            logger.error(f"Error getting user balance: {e}")
-            return 0
-    
-    def update_user_info(self, telegram_id: int, username: str = None, 
-                         first_name: str = None, last_name: str = None) -> bool:
-        """Update user's profile information (username, first_name, last_name)"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute('''
-                    UPDATE users SET 
-                    username = %s,
-                    first_name = %s,
-                    last_name = %s,
-                    last_activity = CURRENT_TIMESTAMP
-                    WHERE telegram_id = %s
-                ''', (username, first_name, last_name, telegram_id))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error updating user info: {e}")
-            return False
-    
-    def update_user_activity(self, telegram_id: int) -> bool:
-        """Update user's last activity timestamp"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute('''
-                    UPDATE users SET last_activity = CURRENT_TIMESTAMP 
-                    WHERE telegram_id = %s
-                ''', (telegram_id,))
-                conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Error updating user activity: {e}")
-            return False
-    
-    # Panel Management Methods
-    def add_panel(self, name: str, url: str, username: str, password: str, 
-                  api_endpoint: str, default_inbound_id: int = None, price_per_gb: int = 0,
-                  subscription_url: str = None, panel_type: str = '3x-ui', default_protocol: str = 'vless',
-<<<<<<< HEAD
-                  sale_type: str = 'gigabyte') -> int:
-=======
-                  sale_type: str = 'gigabyte', extra_config: dict = None) -> int:
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
-        """Add a new panel"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-<<<<<<< HEAD
-                cursor.execute('''
-                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type))
-=======
-                
-                # Serialize extra_config to JSON if provided
-                extra_config_json = json.dumps(extra_config) if extra_config else None
-                
-                cursor.execute('''
-                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config_json))
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
-                
-                panel_id = cursor.lastrowid
-                conn.commit()
-                self.log_system_event('INFO', f'Panel added: {name} (Type: {panel_type})', 'panel_management', panel_id)
-                return panel_id
-        except Exception as e:
-            logger.error(f"Error adding panel: {e}")
-            return 0
-    
-    def get_panel(self, panel_id: int) -> Optional[Dict]:
-        """Get panel by ID"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute('SELECT * FROM panels WHERE id = %s', (panel_id,))
-                row = cursor.fetchone()
-                return dict(row) if row else None
-        except Exception as e:
-            logger.error(f"Error getting panel: {e}")
-            return None
-    
-    def get_panels(self, active_only: bool = True) -> List[Dict]:
-        """Get all panels"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                query = "SELECT * FROM panels"
-                if active_only:
-                    query += " WHERE is_active = 1"
-                query += " ORDER BY created_at DESC"
-                
-                cursor.execute(query)
-                return [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting panels: {e}")
-            return []
-
-    def get_all_panels(self) -> List[Dict]:
-        """Get all panels (active and inactive) - Alias for get_panels(active_only=False)"""
-        return self.get_panels(active_only=False)
-    
-    def update_panel(self, panel_id: int, name: str = None, url: str = None,
-                     username: str = None, password: str = None, 
-                     api_endpoint: str = None, price_per_gb: int = None,
-                     subscription_url: str = None, panel_type: str = None, default_protocol: str = None,
-<<<<<<< HEAD
-                     sale_type: str = None, default_inbound_id: int = None) -> bool:
-=======
-                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None) -> bool:
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
-        """Update panel information"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor(dictionary=True)
-                
-                # Build dynamic update query
-                updates = []
-                params = []
-                
-                if name is not None:
-                    updates.append("name = %s")
-                    params.append(name)
-                if panel_type is not None:
-                    updates.append("panel_type = %s")
-                    params.append(panel_type)
-                if url is not None:
-                    updates.append("url = %s")
-                    params.append(url)
-                if username is not None:
-                    updates.append("username = %s")
-                    params.append(username)
-<<<<<<< HEAD
-=======
-                if extra_config is not None:
-                    updates.append("extra_config = %s")
-                    params.append(json.dumps(extra_config))
->>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
-                if password is not None:
-                    updates.append("password = %s")
-                    params.append(password)
-                if api_endpoint is not None:
-                    updates.append("api_endpoint = %s")
                     params.append(api_endpoint)
                 if price_per_gb is not None:
                     updates.append("price_per_gb = %s")
@@ -5715,6 +3842,201 @@ class ProfessionalDatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 cursor.execute('SELECT * FROM panel_inbounds WHERE panel_id = %s ORDER BY inbound_id', (panel_id,))
+                            SET setting_value = %s, description = %s, updated_at = CURRENT_TIMESTAMP
+                            WHERE setting_key = %s
+                        ''', (setting_value, description, setting_key))
+                    else:
+                        cursor.execute('''
+                            UPDATE system_settings 
+                            SET setting_value = %s, updated_at = CURRENT_TIMESTAMP
+                            WHERE setting_key = %s
+                        ''', (setting_value, setting_key))
+                else:
+                    # Insert new setting
+                    cursor.execute('''
+                        INSERT INTO system_settings (setting_key, setting_value, description)
+                        VALUES (%s, %s, %s)
+                    ''', (setting_key, setting_value, description))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error setting system setting '{setting_key}': {e}")
+            return False
+    
+    def get_test_account_config(self) -> Dict[str, Optional[int]]:
+        """Get test account configuration (panel_id and inbound_id)"""
+        panel_id = self.get_system_setting('test_account_panel_id')
+        inbound_id = self.get_system_setting('test_account_inbound_id')
+        
+        return {
+            'panel_id': int(panel_id) if panel_id and panel_id.isdigit() else None,
+            'inbound_id': int(inbound_id) if inbound_id and inbound_id.isdigit() else None
+        }
+    
+    def set_test_account_config(self, panel_id: int, inbound_id: int = None) -> bool:
+        """Set test account configuration"""
+        success = True
+        success &= self.set_system_setting(
+            'test_account_panel_id', 
+            str(panel_id), 
+            'Panel ID for test account purchases'
+        )
+        if inbound_id is not None:
+            success &= self.set_system_setting(
+                'test_account_inbound_id', 
+                str(inbound_id), 
+                'Inbound ID for test account purchases'
+            )
+        return success
+
+    # Service Status and Exhaustion Management Methods
+    def update_service_status(self, service_id: int, status: str) -> bool:
+        """Update service status"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    UPDATE clients 
+                    SET status = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (status, service_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating service status: {e}")
+            return False
+
+    def update_service_exhaustion_time(self, service_id: int) -> bool:
+        """Set service exhaustion time to NOW"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    UPDATE clients 
+                    SET exhausted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (service_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating service exhaustion time: {e}")
+            return False
+
+    def update_service_notified_exhausted(self, service_id: int, notified: bool = True) -> bool:
+        """Update notified_exhausted flag"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    UPDATE clients 
+                    SET notified_exhausted = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (1 if notified else 0, service_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating service notified_exhausted: {e}")
+            return False
+
+    def reset_service_exhaustion(self, service_id: int) -> bool:
+        """Reset service exhaustion flags (status, exhausted_at, notified_exhausted, warned_70_percent)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    UPDATE clients 
+                    SET status = 'active',
+                        exhausted_at = NULL,
+                        notified_exhausted = 0,
+                        warned_70_percent = 0,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (service_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error resetting service exhaustion: {e}")
+            return False
+
+    def update_client_panel(self, old_uuid: str, new_panel_id: int, new_client_data: Dict) -> bool:
+        """Update client's panel and details after migration"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Update client record
+                # We identify by old_uuid (which is stored in client_uuid)
+                # We need to update: panel_id, inbound_id, client_uuid (if changed), sub_id (if changed)
+                # Also update config_link if available
+                
+                new_uuid = new_client_data.get('id') or new_client_data.get('uuid')
+                new_sub_id = new_client_data.get('sub_id')
+                new_inbound_id = new_client_data.get('inbound_id', 0)
+                new_config_link = new_client_data.get('subscription_url') or new_client_data.get('config_link')
+                
+                cursor.execute('''
+                    UPDATE clients 
+                    SET panel_id = %s,
+                        inbound_id = %s,
+                        client_uuid = %s,
+                        sub_id = %s,
+                        config_link = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE client_uuid = %s
+                ''', (new_panel_id, new_inbound_id, new_uuid, new_sub_id, new_config_link, old_uuid))
+                
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating client panel: {e}")
+            return False
+
+    # Panel Inbound Management
+    def get_panel_inbound(self, panel_id: int, inbound_id: int) -> Optional[Dict]:
+        """Get a specific inbound for a panel"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('SELECT * FROM panel_inbounds WHERE panel_id = %s AND inbound_id = %s', (panel_id, inbound_id))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error getting panel inbound: {e}")
+            return None
+
+    def add_panel_inbound(self, panel_id: int, inbound_id: int, name: str, protocol: str, port: int, is_enabled: bool = True) -> bool:
+        """Add or update a panel inbound"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                # Check if exists
+                cursor.execute('SELECT id FROM panel_inbounds WHERE panel_id = %s AND inbound_id = %s', (panel_id, inbound_id))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    cursor.execute('''
+                        UPDATE panel_inbounds 
+                        SET inbound_name = %s, inbound_protocol = %s, inbound_port = %s, is_enabled = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    ''', (name, protocol, port, 1 if is_enabled else 0, existing['id']))
+                else:
+                    cursor.execute('''
+                        INSERT INTO panel_inbounds (panel_id, inbound_id, inbound_name, inbound_protocol, inbound_port, is_enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    ''', (panel_id, inbound_id, name, protocol, port, 1 if is_enabled else 0))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error adding/updating panel inbound: {e}")
+            return False
+
+    def get_stored_panel_inbounds(self, panel_id: int) -> List[Dict]:
+        """Get all stored inbounds for a panel"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('SELECT * FROM panel_inbounds WHERE panel_id = %s ORDER BY inbound_id', (panel_id,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error getting stored panel inbounds: {e}")
@@ -5725,11 +4047,12 @@ class ProfessionalDatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute('''
+                query = """
                     UPDATE panel_inbounds 
                     SET is_enabled = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE panel_id = %s AND inbound_id = %s
-                ''', (1 if is_enabled else 0, panel_id, inbound_id))
+                """
+                cursor.execute(query, (1 if is_enabled else 0, panel_id, inbound_id))
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
