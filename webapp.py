@@ -5714,8 +5714,12 @@ def api_admin_add_panel():
             panel_type=data.get('panel_type', '3x-ui'),
             subscription_url=data.get('subscription_url'),
             sale_type=data.get('sale_type', 'gigabyte'),
+<<<<<<< HEAD
+            default_inbound_id=data.get('default_inbound_id')
+=======
             default_inbound_id=data.get('default_inbound_id'),
             extra_config=data.get('extra_config')
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         )
         
         if success:
@@ -5765,6 +5769,8 @@ def api_admin_check_panel_connection():
         logger.error(f"Error checking panel connection: {e}")
         return secure_error_response(e)
 
+<<<<<<< HEAD
+=======
 @app.route('/api/admin/panels/fetch-metadata', methods=['POST'])
 @admin_required
 def api_admin_fetch_panel_metadata():
@@ -5827,6 +5833,8 @@ def api_admin_fetch_panel_metadata():
     except Exception as e:
         logger.error(f"Error fetching panel metadata: {e}")
         return jsonify({'success': False, 'message': f'خطای سیستمی: {str(e)}'}), 500
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 @app.route('/api/admin/panels/<int:panel_id>', methods=['PUT'])
 @admin_required
 def api_admin_update_panel(panel_id):
@@ -5852,8 +5860,12 @@ def api_admin_update_panel(panel_id):
             subscription_url=clean_value(data.get('subscription_url')),
             panel_type=data.get('panel_type'),
             sale_type=data.get('sale_type'),
+<<<<<<< HEAD
+            default_inbound_id=data.get('default_inbound_id')
+=======
             default_inbound_id=data.get('default_inbound_id'),
             extra_config=data.get('extra_config')
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         )
         
         if success:

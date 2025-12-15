@@ -218,6 +218,10 @@ class ProfessionalDatabaseManager:
                         subscription_url TEXT,
                         default_protocol VARCHAR(50) DEFAULT 'vless',
                         sale_type VARCHAR(50) DEFAULT 'gigabyte',
+<<<<<<< HEAD
+=======
+                        extra_config JSON,
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                         notes TEXT
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
@@ -1593,6 +1597,35 @@ class ProfessionalDatabaseManager:
                 ''')
                 logger.info("✅ Migration v1.15_add_comprehensive_warnings completed")
                 conn.commit()
+<<<<<<< HEAD
+=======
+
+            # Migration 16: Add extra_config to panels table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.16_add_extra_config'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Add extra_config to panels table")
+                
+                # Check if column already exists
+                cursor.execute("""
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'panels'
+                """)
+                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+                
+                if 'extra_config' not in columns:
+                    cursor.execute('ALTER TABLE panels ADD COLUMN extra_config JSON')
+                    logger.info("✅ Added extra_config column to panels table")
+                
+                # Mark migration as applied
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v1.16_add_extra_config', 'Add extra_config JSON field to panels table for custom panel settings')
+                ''')
+                logger.info("✅ Migration v1.16_add_extra_config completed")
+                conn.commit()
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             
         except Exception as e:
             logger.error(f"Error running migrations: {e}")
@@ -1947,15 +1980,30 @@ class ProfessionalDatabaseManager:
     def add_panel(self, name: str, url: str, username: str, password: str, 
                   api_endpoint: str, default_inbound_id: int = None, price_per_gb: int = 0,
                   subscription_url: str = None, panel_type: str = '3x-ui', default_protocol: str = 'vless',
+<<<<<<< HEAD
                   sale_type: str = 'gigabyte') -> int:
+=======
+                  sale_type: str = 'gigabyte', extra_config: dict = None) -> int:
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         """Add a new panel"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
+<<<<<<< HEAD
                 cursor.execute('''
                     INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type))
+=======
+                
+                # Serialize extra_config to JSON if provided
+                extra_config_json = json.dumps(extra_config) if extra_config else None
+                
+                cursor.execute('''
+                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config_json))
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 
                 panel_id = cursor.lastrowid
                 conn.commit()
@@ -2001,7 +2049,11 @@ class ProfessionalDatabaseManager:
                      username: str = None, password: str = None, 
                      api_endpoint: str = None, price_per_gb: int = None,
                      subscription_url: str = None, panel_type: str = None, default_protocol: str = None,
+<<<<<<< HEAD
                      sale_type: str = None, default_inbound_id: int = None) -> bool:
+=======
+                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None) -> bool:
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         """Update panel information"""
         try:
             with self.get_connection() as conn:
@@ -2023,6 +2075,12 @@ class ProfessionalDatabaseManager:
                 if username is not None:
                     updates.append("username = %s")
                     params.append(username)
+<<<<<<< HEAD
+=======
+                if extra_config is not None:
+                    updates.append("extra_config = %s")
+                    params.append(json.dumps(extra_config))
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 if password is not None:
                     updates.append("password = %s")
                     params.append(password)

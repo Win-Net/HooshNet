@@ -785,179 +785,6 @@ class ProfessionalButtonLayout:
                 InlineKeyboardButton("💰 50,000 Toman", callback_data="add_balance_50000"),
                 InlineKeyboardButton("💰 100,000 Toman", callback_data="add_balance_100000")
             ],
-        
-        Args:
-            webapp_url: Base URL for webapp (e.g., https://astonnetwork.xyz)
-            bot_name: Bot name for route prefix (e.g., 'unlim' or 'AzadJooNet')
-        """
-        keyboard = []
-        
-        # Web App (if URL provided) - Full width for prominence
-        # Using WebAppInfo for direct integration
-        if not webapp_url:
-            import os
-            # Priority: 1. BOT_WEBAPP_URL (domain), 2. database (ngrok)
-            webapp_url = os.getenv('BOT_WEBAPP_URL') or get_webapp_url()
-        
-        if webapp_url:
-            # Add bot_name prefix to webapp URL if provided
-            base_url = webapp_url.rstrip('/')
-            if bot_name:
-                user_webapp_url = f"{base_url}/{bot_name}"
-            else:
-                user_webapp_url = base_url
-            
-            keyboard.append([
-                InlineKeyboardButton(
-                    "🌐 ورود به وب اپلیکیشن",
-                    web_app=WebAppInfo(url=user_webapp_url)
-                )
-            ])
-            # Add web admin panel button with bot_name prefix
-            if bot_name:
-                admin_webapp_url = f"{base_url}/{bot_name}/admin"
-            else:
-                admin_webapp_url = f"{base_url}/admin"
-            keyboard.append([
-                InlineKeyboardButton(
-                    "👑 ورود به پنل مدیریت وب",
-                    web_app=WebAppInfo(url=admin_webapp_url)
-                )
-            ])
-        
-        # --- Core Management Section ---
-        # Grouping core entities: Users, Panels, Products
-        keyboard.append([
-            InlineKeyboardButton("👥 مدیریت کاربران", callback_data="manage_users"),
-            InlineKeyboardButton("🖥️ مدیریت پنل‌ها", callback_data="manage_panels")
-        ])
-        keyboard.append([
-            InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products")
-        ])
-
-        # --- Financial & System Section ---
-        # Grouping financial and system stats
-        keyboard.append([
-            InlineKeyboardButton("💰 مدیریت مالی", callback_data="financial_management"),
-            InlineKeyboardButton("📊 آمار و گزارشات", callback_data="admin_stats")
-        ])
-
-        # --- Settings & Logs Section ---
-        # Grouping configuration and logs
-        keyboard.append([
-            InlineKeyboardButton("⚙️ تنظیمات سیستم", callback_data="system_settings"),
-            InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="system_logs")
-        ])
-        
-        # --- Navigation ---
-        keyboard.append([InlineKeyboardButton(
-            "🔙 بازگشت به منو اصلی",
-            callback_data="main_menu"
-        )])
-        
-        return InlineKeyboardMarkup(keyboard)
-
-    @staticmethod
-    def create_financial_management_menu() -> InlineKeyboardMarkup:
-        """Create financial management menu"""
-        keyboard = [
-            [InlineKeyboardButton("💳 ثبت شماره کارت", callback_data="card_settings")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def create_confirmation(action: str, item_name: str = "") -> InlineKeyboardMarkup:
-        """Create professional confirmation dialog"""
-        keyboard = [
-            [InlineKeyboardButton(
-                "✅ تأیید",
-                callback_data=f"confirm_{action}"
-            )],
-            [InlineKeyboardButton(
-                "🚫 لغو",
-                callback_data=f"cancel_{action}"
-            )]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def create_navigation(prev_callback: str = None, next_callback: str = None, 
-                                back_callback: str = "main_menu") -> InlineKeyboardMarkup:
-        """Create professional navigation buttons"""
-        keyboard = []
-        
-        # Navigation row
-        nav_buttons = []
-        if prev_callback:
-            nav_buttons.append(InlineKeyboardButton("◀️ قبلی", callback_data=prev_callback))
-        if next_callback:
-            nav_buttons.append(InlineKeyboardButton("▶️ بعدی", callback_data=next_callback))
-        
-        if nav_buttons:
-            keyboard.append(nav_buttons)
-        
-        # Back button
-        keyboard.append([InlineKeyboardButton(
-            "◀️ بازگشت",
-            callback_data=back_callback
-        )])
-        
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def create_quick_actions(actions: List[Dict], back_callback: str = "main_menu") -> InlineKeyboardMarkup:
-        """Create quick action buttons"""
-        keyboard = []
-        
-        # Add action buttons
-        for action in actions:
-            keyboard.append([InlineKeyboardButton(
-                action['text'], 
-                callback_data=action['callback_data']
-            )])
-        
-        # Back button
-        keyboard.append([InlineKeyboardButton(
-            "◀️ بازگشت",
-            callback_data=back_callback
-            )])
-        
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def create_balance_management_buttons() -> InlineKeyboardMarkup:
-        """Create balance management buttons"""
-        keyboard = [
-            [InlineKeyboardButton(
-                "💰 افزایش موجودی",
-                callback_data="add_balance"
-            )],
-            [InlineKeyboardButton(
-                "📋 تاریخچه تراکنش‌ها",
-                callback_data="payment_history"
-            )],
-            [InlineKeyboardButton(
-                "◀️ بازگشت به پنل",
-                callback_data="user_panel"
-            )]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def create_balance_suggestions() -> InlineKeyboardMarkup:
-        """Create balance amount suggestions with custom option - beautiful and compact layout"""
-        keyboard = [
-            # First row: Small amounts (2 columns)
-            [
-                InlineKeyboardButton("💰 10,000 Toman", callback_data="add_balance_10000"),
-                InlineKeyboardButton("💰 25,000 Toman", callback_data="add_balance_25000")
-            ],
-            # Second row: Medium amounts (2 columns)
-            [
-                InlineKeyboardButton("💰 50,000 Toman", callback_data="add_balance_50000"),
-                InlineKeyboardButton("💰 100,000 Toman", callback_data="add_balance_100000")
-            ],
             # Third row: Large amounts (2 columns)
             [
                 InlineKeyboardButton("💰 250,000 Toman", callback_data="add_balance_250000"),
@@ -971,6 +798,8 @@ class ProfessionalButtonLayout:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
+<<<<<<< HEAD
+=======
     def create_system_settings_menu() -> InlineKeyboardMarkup:
         """Create professional system settings menu"""
         keyboard = [
@@ -1000,6 +829,7 @@ class ProfessionalButtonLayout:
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     def create_volume_suggestions(panel_id: int, price_per_gb: int = 1000) -> InlineKeyboardMarkup:
         """Create volume suggestions with custom option - professional and dynamic layout"""
         
@@ -1163,6 +993,8 @@ class ProfessionalButtonLayout:
         )]]
         return InlineKeyboardMarkup(keyboard)
 
+<<<<<<< HEAD
+=======
     @staticmethod
     def create_panel_type_selection() -> InlineKeyboardMarkup:
         """Create panel type selection buttons"""
@@ -1178,6 +1010,8 @@ class ProfessionalButtonLayout:
             [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
         ]
         return InlineKeyboardMarkup(keyboard)
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 
 # Legacy compatibility
 class ButtonLayout(ProfessionalButtonLayout):
