@@ -232,6 +232,24 @@ class ProfessionalDatabaseManager:
                         notes TEXT
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
+
+                # Create panel_inbounds table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS panel_inbounds (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        panel_id INT NOT NULL,
+                        inbound_id INT NOT NULL,
+                        inbound_name VARCHAR(255),
+                        inbound_protocol VARCHAR(50),
+                        inbound_port INT,
+                        is_enabled TINYINT DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        FOREIGN KEY (panel_id) REFERENCES panels (id) ON DELETE CASCADE,
+                        INDEX idx_panel_id (panel_id),
+                        INDEX idx_inbound_id (inbound_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
                 
                 # Create clients table
                 cursor.execute('''
