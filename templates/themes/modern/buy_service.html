@@ -1,0 +1,454 @@
+{% extends "themes/modern/base.html" %}
+
+{% block title %}خرید سرویس جدید{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='themes/modern/redesign.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="redesign-wrapper">
+    <!-- Header -->
+    <div class="r-header anim-entry">
+        <a href="{{ add_bot_prefix('/dashboard') }}" class="r-back-btn">
+            <i class="fas fa-arrow-right"></i>
+        </a>
+        <h1 class="r-page-title">فروشگاه سرویس</h1>
+        <div style="width: 44px;"></div>
+    </div>
+
+    <!-- Hero Section -->
+    <div class="r-hero-card anim-entry delay-1 shimmer-effect">
+        <div style="position: relative; z-index: 1;">
+            <div style="font-size: 0.9rem; color: var(--r-text-muted); margin-bottom: 4px;">موجودی کیف پول</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #fff; letter-spacing: -1px;">
+                <span id="heroBalance">...</span> <small
+                    style="font-size: 1rem; font-weight: 500; opacity: 0.7;">تومان</small>
+            </div>
+            <div
+                style="margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(255,255,255,0.1); border-radius: 20px; font-size: 0.8rem;">
+                <i class="fas fa-shield-alt" style="color: var(--r-success);"></i>
+                <span>اتصال امن و پرسرعت</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 1: Location -->
+    <div class="anim-entry delay-2">
+        <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 0 4px;">
+            <h3 style="font-size: 1.1rem; font-weight: 700;">انتخاب لوکیشن</h3>
+            <span style="font-size: 0.8rem; color: var(--r-text-muted);">بهترین پینگ</span>
+        </div>
+
+        <div id="locationsContainer" class="r-scroll-container">
+            <div class="loading-state"
+                style="padding: 20px; color: var(--r-text-muted); width: 100%; text-align: center;">
+                <i class="fas fa-circle-notch fa-spin"></i> در حال دریافت لیست...
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Service Selection -->
+    <div id="stepSelection" class="anim-entry delay-3" style="margin-top: 32px; display: none;">
+        <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 0 4px;">
+            <h3 style="font-size: 1.1rem; font-weight: 700;">انتخاب بسته</h3>
+
+            <!-- Type Switcher -->
+            <div id="typeSwitcher"
+                style="display: none; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 12px;">
+                <button class="type-btn active" id="btnGig" onclick="switchType('gigabyte')"
+                    style="padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; color: var(--r-text-muted);">حجمی</button>
+                <button class="type-btn" id="btnPlan" onclick="switchType('plan')"
+                    style="padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; color: var(--r-text-muted);">اشتراکی</button>
+            </div>
+        </div>
+
+        <div id="itemsContainer" class="r-grid-3">
+            <!-- Filled by JS -->
+        </div>
+
+        <!-- Custom Volume -->
+        <div id="customVolumeContainer" style="margin-top: 20px; display: none;">
+            <div class="r-input-wrapper">
+                <i class="fas fa-sliders-h r-input-icon"></i>
+                <input type="number" id="customVolume" class="r-input" placeholder=" " oninput="handleCustomVolume()">
+                <span
+                    style="position: absolute; right: 16px; top: 18px; font-size: 0.9rem; color: var(--r-text-muted); pointer-events: none;">وارد
+                    کردن حجم دلخواه (GB)</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Sheet: Summary & Payment -->
+    <div class="r-bottom-sheet" id="paymentSheet">
+        <div class="sheet-handle"></div>
+
+        <div class="r-sheet-content">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+                <div>
+                    <div style="font-size: 0.9rem; color: var(--r-text-muted);">مبلغ قابل پرداخت</div>
+                    <div style="font-size: 1.8rem; font-weight: 800; color: #fff;" id="sheetPrice">0</div>
+                </div>
+                <div style="text-align: left;">
+                    <div style="font-size: 0.9rem; font-weight: 700;" id="sheetService">-</div>
+                    <div style="font-size: 0.8rem; color: var(--r-accent);" id="sheetAmount">-</div>
+                </div>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="r-grid-2" style="margin-bottom: 24px;">
+                <div class="r-select-card" id="pmWallet" onclick="selectPayment('balance')" style="padding: 12px;">
+                    <i class="fas fa-wallet icon" style="font-size: 1.4rem;"></i>
+                    <span class="title" style="font-size: 0.9rem;">کیف پول</span>
+                </div>
+                <div class="r-select-card selected" id="pmCard" onclick="selectPayment('card')" style="padding: 12px;">
+                    <i class="fas fa-credit-card icon" style="font-size: 1.4rem;"></i>
+                    <span class="title" style="font-size: 0.9rem;">کارت به کارت</span>
+                </div>
+            </div>
+
+            <!-- Card Upload (Conditional) -->
+            <div id="cardUploadSection">
+                <div
+                    style="background: rgba(255,255,255,0.03); border-radius: 16px; padding: 16px; margin-bottom: 20px; border: 1px dashed rgba(255,255,255,0.1);">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="font-size: 0.9rem; color: var(--r-text-muted);">شماره کارت:</span>
+                        <span style="font-weight: 700; letter-spacing: 1px;" id="cardNumber">...</span>
+                        <i class="fas fa-copy" onclick="copyCard()"
+                            style="cursor: pointer; color: var(--r-primary);"></i>
+                    </div>
+                    <input type="file" id="receiptFile" hidden accept="image/*" onchange="updateFileName(this)">
+                    <label for="receiptFile" class="r-btn r-btn-glass" style="padding: 10px; font-size: 0.9rem;">
+                        <i class="fas fa-upload"></i>
+                        <span id="fileName">آپلود رسید پرداخت</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="r-sheet-actions">
+            <button class="r-btn r-btn-glass" onclick="closeSheet()">
+                بازگشت
+            </button>
+            <button class="r-btn r-btn-primary" id="submitBtn" onclick="submitOrder()">
+                تایید و پرداخت
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // --- State Management ---
+    const state = {
+        panels: [],
+        selectedPanel: null,
+        type: 'gigabyte',
+        products: [],
+        selectedItem: null,
+        paymentMethod: 'card',
+        balance: 0
+    };
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+        loadPanels();
+        loadBalance();
+        loadCardInfo();
+    });
+
+    // --- API Calls ---
+    async function loadPanels() {
+        try {
+            const res = await fetch(fixUrl('/api/panels'));
+            const data = await res.json();
+            if (data.success && data.panels) {
+                state.panels = data.panels;
+                renderPanels();
+                if (state.panels.length === 1) selectPanel(state.panels[0].id);
+            } else {
+                console.error('Failed to load panels:', data);
+                showToast('خطا در دریافت لیست سرویس‌ها', 'error');
+            }
+        } catch (e) {
+            console.error('Error loading panels:', e);
+            showToast('خطا در ارتباط با سرور', 'error');
+        }
+    }
+
+    async function loadBalance() {
+        try {
+            const res = await fetch(fixUrl('/api/stats'));
+            const data = await res.json();
+            if (data.success) {
+                state.balance = data.stats.balance || 0;
+                document.getElementById('heroBalance').textContent = state.balance.toLocaleString();
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadCardInfo() {
+        try {
+            const res = await fetch(fixUrl('/api/payment/card-info'));
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('cardNumber').textContent = data.card_number;
+            }
+        } catch (e) { }
+    }
+
+    // --- Rendering ---
+    function renderPanels() {
+        const container = document.getElementById('locationsContainer');
+        container.innerHTML = '';
+
+        state.panels.forEach(panel => {
+            const el = document.createElement('div');
+            el.className = 'r-location-card';
+            el.id = `panel-${panel.id}`;
+            el.onclick = () => selectPanel(panel.id);
+
+            const flag = panel.flag_url || '🌍';
+
+            el.innerHTML = `
+                <div class="loc-flag">
+                    ${flag}
+                    <div class="loc-ping"></div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-weight: 700; font-size: 0.95rem;">${panel.name}</div>
+                    <div style="font-size: 0.75rem; color: var(--r-text-muted); margin-top: 2px;">${panel.country_fa || 'لوکیشن'}</div>
+                </div>
+            `;
+            container.appendChild(el);
+        });
+    }
+
+    function selectPanel(id) {
+        state.selectedPanel = state.panels.find(p => p.id === id);
+
+        // Visual Selection
+        document.querySelectorAll('.r-location-card').forEach(el => el.classList.remove('selected'));
+        document.getElementById(`panel-${id}`).classList.add('selected');
+
+        // Show Next Step
+        const step = document.getElementById('stepSelection');
+        step.style.display = 'block';
+        step.classList.add('anim-entry');
+
+        // Handle Type Switching
+        const saleType = state.selectedPanel.sale_type || 'gigabyte';
+        const switcher = document.getElementById('typeSwitcher');
+
+        if (saleType === 'both') {
+            switcher.style.display = 'flex';
+            switchType('gigabyte');
+        } else if (saleType === 'plan') {
+            switcher.style.display = 'none';
+            switchType('plan');
+        } else {
+            switcher.style.display = 'none';
+            switchType('gigabyte');
+        }
+
+        // Reset
+        state.selectedItem = null;
+        document.getElementById('paymentSheet').classList.remove('visible');
+    }
+
+    function switchType(type) {
+        state.type = type;
+
+        // Update Buttons
+        document.getElementById('btnGig').style.background = type === 'gigabyte' ? 'var(--r-primary)' : 'transparent';
+        document.getElementById('btnGig').style.color = type === 'gigabyte' ? '#fff' : 'var(--r-text-muted)';
+
+        document.getElementById('btnPlan').style.background = type === 'plan' ? 'var(--r-primary)' : 'transparent';
+        document.getElementById('btnPlan').style.color = type === 'plan' ? '#fff' : 'var(--r-text-muted)';
+
+        if (type === 'gigabyte') {
+            renderVolumes();
+            document.getElementById('customVolumeContainer').style.display = 'block';
+        } else {
+            loadProducts();
+            document.getElementById('customVolumeContainer').style.display = 'none';
+        }
+    }
+
+    function renderVolumes() {
+        const container = document.getElementById('itemsContainer');
+        container.innerHTML = '';
+        const volumes = [5, 10, 20, 30, 50, 100];
+
+        volumes.forEach((vol, index) => {
+            const price = vol * (state.selectedPanel.price_per_gb || 0);
+            const el = document.createElement('div');
+            el.className = 'r-select-card';
+            if (index === 2) el.innerHTML += '<div class="r-badge-best">پیشنهادی</div>'; // Best value badge
+
+            el.onclick = () => selectVolume(vol, price, el);
+            el.innerHTML += `
+                <div style="font-size: 1.4rem; font-weight: 800;">${vol} <small style="font-size: 0.8rem;">GB</small></div>
+                <div style="font-size: 0.85rem; color: var(--r-text-muted);">${price.toLocaleString()}</div>
+            `;
+            container.appendChild(el);
+        });
+    }
+
+    async function loadProducts() {
+        const container = document.getElementById('itemsContainer');
+        container.innerHTML = '<div class="loading-state"><i class="fas fa-spinner fa-spin"></i></div>';
+
+        try {
+            const res = await fetch(fixUrl(`/api/panel/${state.selectedPanel.id}/products`));
+            const data = await res.json();
+            state.products = data.products || [];
+
+            container.innerHTML = '';
+            if (state.products.length === 0) {
+                container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--r-text-muted);">محصولی یافت نشد</div>';
+                return;
+            }
+
+            state.products.forEach(prod => {
+                const el = document.createElement('div');
+                el.className = 'r-select-card';
+                el.onclick = () => selectProduct(prod, el);
+                el.innerHTML = `
+                    <div style="font-size: 1rem; font-weight: 700;">${prod.name}</div>
+                    <div style="font-size: 0.8rem; color: var(--r-text-muted);">${prod.duration_days} روز</div>
+                    <div style="font-size: 0.9rem; color: var(--r-accent); margin-top: 4px;">${prod.price.toLocaleString()}</div>
+                `;
+                container.appendChild(el);
+            });
+        } catch (e) {
+            container.innerHTML = 'خطا در بارگذاری';
+        }
+    }
+
+    // --- Selection & Payment ---
+    function selectVolume(vol, price, el) {
+        state.selectedItem = { type: 'volume', val: vol, price: price };
+        highlightItem(el);
+        document.getElementById('customVolume').value = '';
+        updateSheet();
+    }
+
+    function handleCustomVolume() {
+        const val = parseInt(document.getElementById('customVolume').value);
+        if (val > 0) {
+            const price = val * (state.selectedPanel.price_per_gb || 0);
+            state.selectedItem = { type: 'volume', val: val, price: price };
+            highlightItem(null);
+            updateSheet();
+        }
+    }
+
+    function selectProduct(prod, el) {
+        state.selectedItem = { type: 'product', val: prod, price: prod.price };
+        highlightItem(el);
+        updateSheet();
+    }
+
+    function highlightItem(el) {
+        document.querySelectorAll('#itemsContainer .r-select-card').forEach(c => c.classList.remove('selected'));
+        if (el) el.classList.add('selected');
+    }
+
+    function updateSheet() {
+        if (!state.selectedItem) return;
+
+        const sheet = document.getElementById('paymentSheet');
+        sheet.classList.add('visible');
+
+        document.getElementById('sheetService').textContent = state.selectedPanel.name;
+        document.getElementById('sheetAmount').textContent = state.selectedItem.type === 'volume' ? `${state.selectedItem.val} GB` : state.selectedItem.val.name;
+        document.getElementById('sheetPrice').textContent = state.selectedItem.price.toLocaleString();
+
+        // Auto-switch payment method if balance insufficient
+        if (state.balance < state.selectedItem.price && state.paymentMethod === 'balance') {
+            selectPayment('card');
+        }
+
+        // Update Wallet UI
+        const walletEl = document.getElementById('pmWallet');
+        if (state.balance >= state.selectedItem.price) {
+            walletEl.style.opacity = 1;
+            walletEl.style.pointerEvents = 'auto';
+        } else {
+            walletEl.style.opacity = 0.5;
+            walletEl.style.pointerEvents = 'none';
+        }
+    }
+
+    function selectPayment(method) {
+        state.paymentMethod = method;
+        document.getElementById('pmWallet').classList.toggle('selected', method === 'balance');
+        document.getElementById('pmCard').classList.toggle('selected', method === 'card');
+        document.getElementById('cardUploadSection').style.display = method === 'card' ? 'block' : 'none';
+    }
+
+    // --- Actions ---
+    function copyCard() {
+        const txt = document.getElementById('cardNumber').textContent;
+        navigator.clipboard.writeText(txt).then(() => showToast('کپی شد', 'success'));
+    }
+
+    function updateFileName(input) {
+        if (input.files[0]) document.getElementById('fileName').textContent = input.files[0].name;
+    }
+
+    async function submitOrder() {
+        const btn = document.getElementById('submitBtn');
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        try {
+            const formData = new FormData();
+            formData.append('panel_id', state.selectedPanel.id);
+            formData.append('payment_method', state.paymentMethod);
+
+            if (state.selectedItem.type === 'volume') {
+                formData.append('amount_gb', state.selectedItem.val);
+            } else {
+                formData.append('product_id', state.selectedItem.val.id);
+            }
+
+            if (state.paymentMethod === 'card') {
+                const file = document.getElementById('receiptFile').files[0];
+                if (!file) {
+                    showToast('لطفا رسید را آپلود کنید', 'error');
+                    throw new Error('No receipt');
+                }
+                formData.append('receipt', file);
+            }
+
+            const res = await fetch(fixUrl('/buy-service'), { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.success) {
+                showToast('سفارش با موفقیت ثبت شد', 'success');
+                setTimeout(() => window.location.href = fixUrl('/dashboard'), 1500);
+            } else {
+                showToast(data.message || 'خطا در ثبت سفارش', 'error');
+                btn.innerHTML = original;
+                btn.disabled = false;
+            }
+        } catch (e) {
+            if (e.message !== 'No receipt') showToast('خطا در ارتباط', 'error');
+            btn.innerHTML = original;
+            btn.disabled = false;
+        }
+    }
+
+    function closeSheet() {
+        document.getElementById('paymentSheet').classList.remove('visible');
+    }
+</script>
+{% endblock %}

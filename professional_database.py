@@ -741,10 +741,11 @@ class ProfessionalDatabaseManager:
                         ('user_panel', '📊 پنل کاربری', 'user_panel', 'callback', None, 0, 1, 1, 0, 1, 0, 2),
                         ('test_account', '🧪 اکانت تست', 'test_account', 'callback', None, 1, 0, 1, 0, 1, 0, 3),
                         ('account_balance', '💰 موجودی', 'account_balance', 'callback', None, 1, 1, 1, 0, 1, 0, 4),
-                        ('referral_system', '🎁 دعوت دوستان', 'referral_system', 'callback', None, 2, 0, 1, 0, 1, 0, 5),
-                        ('help', '❓ راهنما و پشتیبانی', 'help', 'callback', None, 2, 1, 1, 0, 1, 0, 6),
-                        ('webapp', '🌐 ورود به وب اپلیکیشن', 'webapp', 'webapp', None, 3, 0, 1, 0, 1, 1, 7),
-                        ('admin_panel', '⚙️ پنل مدیریت', 'admin_panel', 'callback', None, 4, 0, 1, 1, 0, 0, 8),
+                        ('wheel_of_fortune', '🎰 گردونه شانس', 'wheel_spin', 'callback', None, 2, 0, 1, 0, 1, 0, 5),
+                        ('referral_system', '🎁 دعوت دوستان', 'referral_system', 'callback', None, 2, 1, 1, 0, 1, 0, 6),
+                        ('help', '❓ راهنما و پشتیبانی', 'help', 'callback', None, 3, 0, 1, 0, 1, 0, 7),
+                        ('webapp', '🌐 ورود به وب اپلیکیشن', 'webapp', 'webapp', None, 3, 1, 1, 0, 1, 1, 8),
+                        ('admin_panel', '⚙️ پنل مدیریت', 'admin_panel', 'callback', None, 4, 0, 1, 1, 0, 0, 9),
                     ]
                     
                     cursor.executemany('''
@@ -780,6 +781,46 @@ class ProfessionalDatabaseManager:
                     ''')
                     logger.info("✅ Created reserved_services table")
                 
+                # Create wheel_settings table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS wheel_settings (
+                        setting_key VARCHAR(255) PRIMARY KEY,
+                        setting_value TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+
+                # Create wheel_prizes table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS wheel_prizes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        type VARCHAR(50) NOT NULL,
+                        value FLOAT DEFAULT 0,
+                        probability FLOAT DEFAULT 0,
+                        is_active TINYINT DEFAULT 1,
+                        display_order INT DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_is_active (is_active)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+
+                # Create wheel_spins table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS wheel_spins (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        prize_type VARCHAR(50) NOT NULL,
+                        prize_value FLOAT DEFAULT 0,
+                        prize_label VARCHAR(255),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                        INDEX idx_user_id (user_id),
+                        INDEX idx_created_at (created_at)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+
                 # Run migrations
                 self._run_migrations(conn)
                 
@@ -798,6 +839,34 @@ class ProfessionalDatabaseManager:
             # Migration 1: Add subscription_url to panels table
             cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.0_add_subscription_url'")
             if not cursor.fetchone():
+                try:
+                    cursor.execute('ALTER TABLE panels ADD COLUMN subscription_url TEXT')
+                    cursor.execute("INSERT INTO database_migrations (version, description) VALUES ('v1.0_add_subscription_url', 'Add subscription_url to panels')")
+                    logger.info("Applied migration v1.0_add_subscription_url")
+                except Exception as e:
+                    logger.warning(f"Migration v1.0 failed: {e}")
+
+            # Migration v6.0: Add panel settings (naming_method, naming_prefix, default_config)
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v6.0_add_panel_settings'")
+            if not cursor.fetchone():
+                try:
+                    # Check columns individually to avoid errors if partially applied
+                    cursor.execute("SHOW COLUMNS FROM panels LIKE 'naming_method'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE panels ADD COLUMN naming_method INT DEFAULT 1')
+                    
+                    cursor.execute("SHOW COLUMNS FROM panels LIKE 'naming_prefix'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE panels ADD COLUMN naming_prefix VARCHAR(50)')
+                        
+                    cursor.execute("SHOW COLUMNS FROM panels LIKE 'default_config'")
+                    if not cursor.fetchone():
+                        cursor.execute('ALTER TABLE panels ADD COLUMN default_config JSON')
+                        
+                    cursor.execute("INSERT INTO database_migrations (version, description) VALUES ('v6.0_add_panel_settings', 'Add naming_method, naming_prefix, default_config to panels')")
+                    logger.info("Applied migration v6.0_add_panel_settings")
+                except Exception as e:
+                    logger.error(f"Migration v6.0 failed: {e}")
                 logger.info("Running migration: Add subscription_url to panels table")
                 
                 # Check if column already exists
@@ -896,6 +965,259 @@ class ProfessionalDatabaseManager:
                     VALUES ('v1.3_create_settings_table', 'Create settings table for dynamic configuration')
                 ''')
                 logger.info("✅ Migration v1.3_create_settings_table completed")
+
+            # Migration 5: Add admin_role column to users table for multi-level admin support
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.4_add_admin_role'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Add admin_role to users table")
+                
+                # Check if column already exists
+                cursor.execute("""
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'users'
+                """)
+                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+                
+                if 'admin_role' not in columns:
+                    cursor.execute("ALTER TABLE users ADD COLUMN admin_role VARCHAR(50) DEFAULT 'admin'")
+                    logger.info("✅ Added admin_role column to users table")
+                    
+                    # Update existing admins to have 'admin' role
+                    cursor.execute("UPDATE users SET admin_role = 'admin' WHERE is_admin = 1")
+                    logger.info("✅ Updated existing admins with 'admin' role")
+                
+                # Mark migration as applied
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v1.4_add_admin_role', 'Add admin_role field to users table for multi-level admin support (admin/seller/support)')
+                ''')
+                logger.info("✅ Migration v1.4_add_admin_role completed")
+
+            # Migration 6: Create wheel_spins table for wheel of fortune
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v2.0_create_wheel_spins'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Create wheel_spins table")
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS wheel_spins (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        prize_type VARCHAR(50) NOT NULL,
+                        prize_value INT DEFAULT 0,
+                        prize_label VARCHAR(255),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                        INDEX idx_user_id (user_id),
+                        INDEX idx_created_at (created_at)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v2.0_create_wheel_spins', 'Create wheel_spins table for wheel of fortune history')
+                ''')
+                logger.info("✅ Migration v2.0_create_wheel_spins completed")
+
+            # Migration 7: Create lottery_draws table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v2.1_create_lottery_draws'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Create lottery_draws table")
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS lottery_draws (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        prize_type VARCHAR(50) NOT NULL,
+                        prize_value INT NOT NULL,
+                        ticket_price INT DEFAULT 0,
+                        max_tickets INT DEFAULT 0,
+                        draw_date TIMESTAMP NOT NULL,
+                        winner_user_id INT,
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (winner_user_id) REFERENCES users (id) ON DELETE SET NULL,
+                        INDEX idx_status (status),
+                        INDEX idx_draw_date (draw_date)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v2.1_create_lottery_draws', 'Create lottery_draws table for lottery management')
+                ''')
+                logger.info("✅ Migration v2.1_create_lottery_draws completed")
+
+            # Migration 8: Create lottery_tickets table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v2.2_create_lottery_tickets'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Create lottery_tickets table")
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS lottery_tickets (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        draw_id INT NOT NULL,
+                        user_id INT NOT NULL,
+                        ticket_number VARCHAR(50) NOT NULL,
+                        purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (draw_id) REFERENCES lottery_draws (id) ON DELETE CASCADE,
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                        INDEX idx_draw_id (draw_id),
+                        INDEX idx_user_id (user_id),
+                        UNIQUE KEY unique_ticket (draw_id, ticket_number)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v2.2_create_lottery_tickets', 'Create lottery_tickets table for tracking participants')
+                ''')
+                logger.info("✅ Migration v2.2_create_lottery_tickets completed")
+
+            # Migration 9: Create support_departments table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v3.0_create_support_departments'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Create support_departments table")
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS support_departments (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        emoji VARCHAR(10) DEFAULT '🎧',
+                        admin_ids TEXT,
+                        display_order INT DEFAULT 0,
+                        is_active TINYINT DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_is_active (is_active)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v3.0_create_support_departments', 'Create support_departments table for ticket routing')
+                ''')
+                logger.info("✅ Migration v3.0_create_support_departments completed")
+
+            # Migration 10: Add department_id to tickets table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v3.1_add_department_to_tickets'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Add department_id to tickets")
+                
+                cursor.execute("""
+                    SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tickets'
+                """)
+                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+                
+                if 'department_id' not in columns:
+                    cursor.execute('ALTER TABLE tickets ADD COLUMN department_id INT')
+                    cursor.execute('ALTER TABLE tickets ADD INDEX idx_department_id (department_id)')
+                    logger.info("✅ Added department_id column to tickets table")
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v3.1_add_department_to_tickets', 'Add department_id to tickets for routing')
+                ''')
+                logger.info("✅ Migration v3.1_add_department_to_tickets completed")
+
+            # Migration 11: Create app_links table for download links management
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v4.0_create_app_links'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Create app_links table")
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS app_links (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        platform VARCHAR(50) NOT NULL,
+                        download_url TEXT NOT NULL,
+                        icon_emoji VARCHAR(10) DEFAULT '📱',
+                        display_order INT DEFAULT 0,
+                        is_active TINYINT DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_platform (platform),
+                        INDEX idx_is_active (is_active)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                # Insert default app links
+                default_apps = [
+                    ('V2rayNG', 'کلاینت رسمی V2Ray برای اندروید', 'android', 'https://github.com/2dust/v2rayNG/releases', '📱'),
+                    ('V2Box', 'کلاینت V2Ray برای iOS', 'ios', 'https://apps.apple.com/app/v2box-v2ray-client/id6446814690', '🍎'),
+                    ('Hiddify', 'کلاینت چند پلتفرم', 'multi', 'https://github.com/hiddify/hiddify-next/releases', '🔐'),
+                    ('Nekobox', 'کلاینت پیشرفته اندروید', 'android', 'https://github.com/MatsuriDayo/NekoBoxForAndroid/releases', '🐱'),
+                    ('Clash Verge', 'کلاینت دسکتاپ', 'desktop', 'https://github.com/zzzgydi/clash-verge/releases', '💻'),
+                ]
+                
+                for app in default_apps:
+                    cursor.execute('''
+                        INSERT INTO app_links (name, description, platform, download_url, icon_emoji)
+                        VALUES (%s, %s, %s, %s, %s)
+                    ''', app)
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v4.0_create_app_links', 'Create app_links table for managing download links')
+                ''')
+                logger.info("✅ Migration v4.0_create_app_links completed")
+
+            # Migration 12: Create required_channels table for multi-channel force join
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v5.0_create_required_channels'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Create required_channels table")
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS required_channels (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        channel_id VARCHAR(100) NOT NULL,
+                        channel_name VARCHAR(255) NOT NULL,
+                        channel_url TEXT,
+                        display_order INT DEFAULT 0,
+                        is_required TINYINT DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_channel_id (channel_id),
+                        INDEX idx_is_required (is_required)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v5.0_create_required_channels', 'Create required_channels table for multi-channel force join')
+                ''')
+                logger.info("✅ Migration v5.0_create_required_channels completed")
+
+            # Migration 13: Add naming_method and renewal_method to panels table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v5.1_add_panel_methods'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Add naming/renewal methods to panels")
+                
+                cursor.execute("""
+                    SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'panels'
+                """)
+                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+                
+                if 'naming_method' not in columns:
+                    cursor.execute("ALTER TABLE panels ADD COLUMN naming_method INT DEFAULT 2")
+                    cursor.execute("ALTER TABLE panels ADD COLUMN admin_prefix VARCHAR(50) DEFAULT 'VIP'")
+                    logger.info("✅ Added naming_method and admin_prefix to panels")
+                
+                if 'renewal_method' not in columns:
+                    cursor.execute("ALTER TABLE panels ADD COLUMN renewal_method INT DEFAULT 1")
+                    logger.info("✅ Added renewal_method to panels")
+                
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v5.1_add_panel_methods', 'Add naming_method, renewal_method to panels table')
+                ''')
+                logger.info("✅ Migration v5.1_add_panel_methods completed")
 
         except Exception as e:
             logger.error(f"Migration error: {e}")
@@ -1687,6 +2009,93 @@ class ProfessionalDatabaseManager:
         except Exception as e:
             logger.error(f"Error updating panel default inbound: {e}")
             return False
+
+    def update_panel_naming_method(self, panel_id: int, method_id: int) -> bool:
+        """Update panel naming method in extra_config"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                
+                # Get current config
+                cursor.execute('SELECT extra_config FROM panels WHERE id = %s', (panel_id,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return False
+                    
+                current_config = result['extra_config']
+                if isinstance(current_config, str):
+                    try:
+                        config_dict = json.loads(current_config) if current_config else {}
+                    except:
+                        config_dict = {}
+                else:
+                    config_dict = current_config if current_config else {}
+                    
+                # Update method
+                config_dict['naming_method'] = str(method_id)
+                
+                # Save back
+                new_config = json.dumps(config_dict)
+                cursor.execute('''
+                    UPDATE panels 
+                    SET extra_config = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (new_config, panel_id))
+                conn.commit()
+                
+                # Verify update
+                cursor.execute('SELECT extra_config FROM panels WHERE id = %s', (panel_id,))
+                verify_result = cursor.fetchone()
+                if verify_result:
+                    verify_config = json.loads(verify_result['extra_config']) if isinstance(verify_result['extra_config'], str) else verify_result['extra_config']
+                    logger.info(f"🔍 DB Verification for panel {panel_id}: naming_method is now {verify_config.get('naming_method')}")
+                
+                self.log_system_event('INFO', f'Updated naming method for panel {panel_id} to {method_id}', 'panel_management')
+                return True
+        except Exception as e:
+            logger.error(f"Error updating panel naming method: {e}")
+            return False
+
+    def update_panel_settings(self, panel_id: int, settings: Dict) -> bool:
+        """Update arbitrary settings in panel extra_config"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                
+                # Get current config
+                cursor.execute('SELECT extra_config FROM panels WHERE id = %s', (panel_id,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return False
+                    
+                current_config = result['extra_config']
+                if isinstance(current_config, str):
+                    try:
+                        config_dict = json.loads(current_config) if current_config else {}
+                    except:
+                        config_dict = {}
+                else:
+                    config_dict = current_config if current_config else {}
+                    
+                # Update settings
+                for key, value in settings.items():
+                    config_dict[key] = value
+                
+                # Save back
+                new_config = json.dumps(config_dict)
+                cursor.execute('''
+                    UPDATE panels 
+                    SET extra_config = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (new_config, panel_id))
+                conn.commit()
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error updating panel settings: {e}")
+            return False
     
     def get_active_inbounds_for_change(self, exclude_panel_id: int = None, exclude_inbound_id: int = None, price_per_gb: int = None) -> List[Dict]:
         """Get all active inbounds from all panels for panel/inbound change feature
@@ -2462,9 +2871,70 @@ class ProfessionalDatabaseManager:
                 logger.info(f"Updated service {service_id} panel: panel_id={new_panel_id}, total_gb={new_total_gb}, config_link={'updated' if config_link else 'not updated'}")
                 return True
         except Exception as e:
-            logger.error(f"Error updating service panel: {e}")
             return False
     
+    def update_panel_naming_method(self, panel_id: int, naming_method: int) -> bool:
+        """Update panel naming method"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    UPDATE panels 
+                    SET naming_method = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (naming_method, panel_id))
+                conn.commit()
+                logger.info(f"Updated naming method for panel {panel_id} to {naming_method}")
+                return True
+        except Exception as e:
+            logger.error(f"Error updating panel naming method: {e}")
+            return False
+
+    def update_panel_settings(self, panel_id: int, settings: Dict) -> bool:
+        """Update panel settings (extra_config)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                
+                # First get existing config
+                cursor.execute('SELECT extra_config FROM panels WHERE id = %s', (panel_id,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return False
+                    
+                current_config = result['extra_config']
+                if isinstance(current_config, str):
+                    try:
+                        current_config = json.loads(current_config)
+                    except:
+                        current_config = {}
+                elif current_config is None:
+                    current_config = {}
+                    
+                # Update config
+                current_config.update(settings)
+                
+                # Also check if naming_method is in settings and update the column too
+                if 'naming_method' in settings:
+                    try:
+                        naming_method = int(settings['naming_method'])
+                        cursor.execute('UPDATE panels SET naming_method = %s WHERE id = %s', (naming_method, panel_id))
+                    except:
+                        pass
+                
+                cursor.execute('''
+                    UPDATE panels 
+                    SET extra_config = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (json.dumps(current_config), panel_id))
+                conn.commit()
+                logger.info(f"Updated settings for panel {panel_id}: {settings}")
+                return True
+        except Exception as e:
+            logger.error(f"Error updating panel settings: {e}")
+            return False
+
     def update_service_panel_simple(self, service_id: int, new_panel_id: int, new_inbound_id: int) -> bool:
         """
         Simple update of service panel_id and inbound_id without modifying client_uuid or traffic.
@@ -3961,6 +4431,56 @@ class ProfessionalDatabaseManager:
             logger.error(f"Error deleting reserved service: {e}")
             return False
     
+    def update_panel_settings(self, panel_id: int, settings: Dict) -> bool:
+        """Update panel settings"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                updates = []
+                params = []
+                
+                # Map settings to database columns
+                # This mapping depends on what settings are being updated and what columns exist
+                # Based on usage: naming_method is stored in extra_config
+                
+                # First get current extra_config
+                cursor.execute('SELECT extra_config FROM panels WHERE id = %s', (panel_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return False
+                    
+                current_config = json.loads(row['extra_config']) if row['extra_config'] else {}
+                
+                # Update config with new settings
+                config_changed = False
+                for key, value in settings.items():
+                    # Check if it's a direct column update or extra_config
+                    if key in ['name', 'url', 'username', 'password', 'panel_type', 'price_per_gb', 'is_active']:
+                        updates.append(f"{key} = %s")
+                        params.append(value)
+                    else:
+                        # Assume it goes into extra_config
+                        current_config[key] = value
+                        config_changed = True
+                
+                if config_changed:
+                    updates.append("extra_config = %s")
+                    params.append(json.dumps(current_config))
+                
+                if not updates:
+                    return True
+                
+                updates.append("updated_at = CURRENT_TIMESTAMP")
+                params.append(panel_id)
+                
+                query = f"UPDATE panels SET {', '.join(updates)} WHERE id = %s"
+                cursor.execute(query, params)
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating panel settings: {e}")
+            return False
+
     # Menu Buttons Management Methods
     def get_menu_buttons(self, is_admin: bool = False) -> List[Dict]:
         """Get all menu buttons ordered by display_order for current database"""
@@ -5132,12 +5652,115 @@ class ProfessionalDatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 cursor.execute('''
-                    UPDATE panel_inbounds 
-                    SET is_enabled = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE panel_id = %s AND inbound_id = %s
                 ''', (1 if is_enabled else 0, panel_id, inbound_id))
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Error updating panel inbound status: {e}")
+            return False
+
+    # ==================== WHEEL OF FORTUNE METHODS ====================
+
+    def get_wheel_settings(self) -> Dict[str, Any]:
+        """Get all wheel of fortune settings"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('SELECT * FROM wheel_settings')
+                rows = cursor.fetchall()
+                
+                settings = {}
+                for row in rows:
+                    settings[row['setting_key']] = row['setting_value']
+                
+                return settings
+        except Error as e:
+            logger.error(f"Error getting wheel settings: {e}")
+            return {}
+
+    def set_wheel_setting(self, key: str, value: str) -> bool:
+        """Set a wheel of fortune setting"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO wheel_settings (setting_key, setting_value)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                ''', (key, str(value)))
+                conn.commit()
+                return True
+        except Error as e:
+            logger.error(f"Error setting wheel setting {key}: {e}")
+            return False
+
+    def get_prizes(self, active_only: bool = True) -> List[Dict]:
+        """Get all wheel prizes"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                query = "SELECT * FROM wheel_prizes"
+                if active_only:
+                    cursor.execute('SELECT * FROM wheel_prizes WHERE is_active = 1 ORDER BY display_order ASC')
+                else:
+                    cursor.execute('SELECT * FROM wheel_prizes ORDER BY display_order ASC')
+                return cursor.fetchall()
+        except Error as e:
+            logger.error(f"Error getting prizes: {e}")
+            return []
+
+    def add_prize(self, name: str, type: str, value: float, probability: float, 
+                 is_active: bool = True, display_order: int = 0) -> int:
+        """Add a new prize"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO wheel_prizes 
+                    (name, type, value, probability, is_active, display_order)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (name, type, value, probability, 1 if is_active else 0, display_order))
+                conn.commit()
+                return cursor.lastrowid
+        except Error as e:
+            logger.error(f"Error adding prize: {e}")
+            return 0
+
+    def update_prize(self, prize_id: int, **kwargs) -> bool:
+        """Update a prize"""
+        try:
+            allowed_fields = ['name', 'type', 'value', 'probability', 'is_active', 'display_order']
+            updates = []
+            params = []
+            
+            for key, value in kwargs.items():
+                if key in allowed_fields:
+                    updates.append(f"{key} = %s")
+                    params.append(value)
+            
+            if not updates:
+                return False
+                
+            params.append(prize_id)
+            query = f"UPDATE wheel_prizes SET {', '.join(updates)} WHERE id = %s"
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                conn.commit()
+                return True
+        except Error as e:
+            logger.error(f"Error updating prize {prize_id}: {e}")
+            return False
+
+    def delete_prize(self, prize_id: int) -> bool:
+        """Delete a prize"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM wheel_prizes WHERE id = %s', (prize_id,))
+                conn.commit()
+                return True
+        except Error as e:
+            logger.error(f"Error deleting prize {prize_id}: {e}")
             return False

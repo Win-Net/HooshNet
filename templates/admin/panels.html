@@ -47,7 +47,7 @@
                 <div style="display: flex; gap: var(--sp-md); align-items: center;">
                     <div class="panel-icon-wrapper">
                         <div
-                            class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% elif panel.panel_type == 'pasargad' %}icon-pasargad{% elif panel.panel_type == 'marzneshin' %}icon-marzneshin{% else %}icon-3xui{% endif %}">
+                            class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% elif panel.panel_type == 'pasargad' %}icon-pasargad{% elif panel.panel_type == 'marzneshin' %}icon-marzneshin{% elif panel.panel_type == 'guard' %}icon-guard{% else %}icon-3xui{% endif %}">
                             <i class="fas fa-server"></i>
                         </div>
                     </div>
@@ -55,7 +55,7 @@
                         <div style="font-weight: 800; font-size: 1.1rem; margin-bottom: 2px;">{{ panel.name }}</div>
                         <div style="display: flex; gap: var(--sp-xs);">
                             <span
-                                class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% elif panel.panel_type == 'pasargad' %}badge-success{% elif panel.panel_type == 'marzneshin' %}badge-warning{% else %}badge-warning{% endif %}">
+                                class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% elif panel.panel_type == 'pasargad' %}badge-success{% elif panel.panel_type == 'marzneshin' %}badge-warning{% elif panel.panel_type == 'guard' %}badge-secondary{% else %}badge-warning{% endif %}">
                                 {{ panel.panel_type|upper }}
                             </span>
                             {% if panel.is_active %}
@@ -140,6 +140,7 @@
                         <option value="rebecca">Rebecca</option>
                         <option value="pasargad">Pasarguard</option>
                         <option value="marzneshin">Marzneshin</option>
+                        <option value="guard">Guard (GuardCore)</option>
                     </select>
                 </div>
             </div>
@@ -242,6 +243,7 @@
                         <option value="rebecca">Rebecca</option>
                         <option value="pasargad">Pasarguard</option>
                         <option value="marzneshin">Marzneshin</option>
+                        <option value="guard">Guard (GuardCore)</option>
                     </select>
                 </div>
             </div>
@@ -466,6 +468,10 @@
         background: linear-gradient(135deg, #f59e0b, #d97706);
     }
 
+    .icon-guard {
+        background: linear-gradient(135deg, #06b6d4, #0891b2);
+    }
+
     .detail-row {
         display: flex;
         justify-content: space-between;
@@ -604,19 +610,101 @@
     // ... Other functions (editPanel, updatePanel, deletePanel, migratePanel, recoverServices) 
     // would be similar to existing logic but using the new toast and apiCall helpers from base.html
 
-    // Re-implementing specific logic for panel types (showing/hiding inbound select)
-    document.querySelector('select[name="panel_type"]').addEventListener('change', function (e) {
-        const inboundContainer = document.getElementById('add_inbound_container');
-        const pasargadContainer = document.getElementById('add_pasargad_group_container');
+    // Helper to handle panel type changes
+    function handlePanelTypeChange(panelType, formId) {
+        const form = document.getElementById(formId);
+        const prefix = formId === 'addPanelForm' ? 'add' : 'edit';
 
+        const inboundContainer = document.getElementById(prefix + '_inbound_container');
+        const pasargadContainer = document.getElementById(prefix + '_pasargad_group_container');
+
+        const usernameInput = form.querySelector('input[name="username"]');
+        const usernameGroup = usernameInput.closest('.form-group');
+        const passwordInput = form.querySelector('input[name="password"]');
+        const passwordGroup = passwordInput.closest('.form-group');
+        const passwordLabel = passwordGroup.querySelector('label');
+
+        // Reset visibility
         inboundContainer.style.display = 'none';
         pasargadContainer.style.display = 'none';
+        usernameGroup.style.display = 'block';
+        usernameInput.required = true;
 
-        if (e.target.value === 'rebecca') {
-            inboundContainer.style.display = 'block';
-        } else if (e.target.value === 'pasargad') {
-            pasargadContainer.style.display = 'block';
+        // Reset URL fields visibility (for switching from Guard)
+        const urlInput = form.querySelector('input[name="url"]');
+        const apiEndpointInput = form.querySelector('input[name="api_endpoint"]');
+        const subUrlInput = form.querySelector('input[name="subscription_url"]');
+        if (urlInput && urlInput.closest('.form-group')) {
+            urlInput.closest('.form-group').style.display = 'block';
+            urlInput.required = true;
         }
+        if (apiEndpointInput && apiEndpointInput.closest('.form-group')) {
+            apiEndpointInput.closest('.form-group').style.display = 'block';
+            apiEndpointInput.required = true;
+        }
+        if (subUrlInput && subUrlInput.closest('.form-group')) {
+            subUrlInput.closest('.form-group').style.display = 'block';
+        }
+
+        // Reset labels
+        if (formId === 'addPanelForm') {
+            passwordLabel.textContent = 'رمز عبور';
+            passwordInput.placeholder = '';
+        } else {
+            passwordLabel.textContent = 'رمز عبور (اختیاری)';
+            passwordInput.placeholder = 'تغییر نمی‌کند';
+        }
+
+        if (panelType === 'rebecca') {
+            inboundContainer.style.display = 'block';
+        } else if (panelType === 'pasargad') {
+            pasargadContainer.style.display = 'block';
+        } else if (panelType === 'guard') {
+            // Guard uses hardcoded URL, only needs API Key, subscription URL, and price
+            usernameGroup.style.display = 'none';
+            usernameInput.required = false;
+            usernameInput.value = '';  // Guard doesn't use username
+
+            passwordLabel.textContent = 'کلید API (API Key)';
+            passwordInput.placeholder = 'کلید API پنل Guard';
+            passwordInput.required = true;
+
+            // Hide URL and API endpoint fields - Guard uses hardcoded URL
+            const urlInput = form.querySelector('input[name="url"]');
+            const apiEndpointInput = form.querySelector('input[name="api_endpoint"]');
+            const subUrlInput = form.querySelector('input[name="subscription_url"]');
+            const priceInput = form.querySelector('input[name="price_per_gb"]');
+
+            if (urlInput) {
+                urlInput.closest('.form-group').style.display = 'none';
+                urlInput.required = false;
+                urlInput.value = 'https://core.erfjab.com';
+            }
+            if (apiEndpointInput) {
+                apiEndpointInput.closest('.form-group').style.display = 'none';
+                apiEndpointInput.required = false;
+                apiEndpointInput.value = 'https://core.erfjab.com';
+            }
+            // Show subscription URL field for Guard
+            if (subUrlInput) {
+                subUrlInput.closest('.form-group').style.display = 'block';
+                subUrlInput.value = '';
+                subUrlInput.placeholder = 'لینک سابسکریپشن Guard';
+            }
+            // Show price field for Guard
+            if (priceInput) {
+                priceInput.closest('.form-group').style.display = 'block';
+            }
+        }
+    }
+
+    // Event listeners for panel type change
+    document.querySelector('#addPanelForm select[name="panel_type"]').addEventListener('change', function (e) {
+        handlePanelTypeChange(e.target.value, 'addPanelForm');
+    });
+
+    document.querySelector('#editPanelForm select[name="panel_type"]').addEventListener('change', function (e) {
+        handlePanelTypeChange(e.target.value, 'editPanelForm');
     });
 
     // Test connection and fetch services/groups
@@ -625,8 +713,13 @@
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
 
-        if (!data.url || !data.username || !data.password) {
-            showToast('لطفاً آدرس، نام کاربری و رمز عبور را وارد کنید', 'error');
+        if (!data.url || !data.password) {
+            showToast('لطفاً آدرس و رمز/کلید API را وارد کنید', 'error');
+            return;
+        }
+        // Guard doesn't need username
+        if (data.panel_type !== 'guard' && !data.username) {
+            showToast('لطفاً نام کاربری را وارد کنید', 'error');
             return;
         }
 
@@ -718,11 +811,11 @@
             const pasargadContainer = document.getElementById('edit_pasargad_group_container');
             const inboundContainer = document.getElementById('edit_inbound_container');
 
-            pasargadContainer.style.display = 'none';
-            inboundContainer.style.display = 'none';
+            // Apply UI changes based on panel type
+            handlePanelTypeChange(panel.panel_type, 'editPanelForm');
 
             if (panel.panel_type === 'pasargad') {
-                pasargadContainer.style.display = 'block';
+                // pasargadContainer is already shown by handlePanelTypeChange
                 // Populate groups if possible, or show current value
                 const select = document.getElementById('edit_pasargad_group');
                 select.innerHTML = ''; // Clear
@@ -752,7 +845,7 @@
                     select.innerHTML = '<option value="">گروهی انتخاب نشده</option>';
                 }
             } else if (panel.panel_type === 'rebecca') {
-                inboundContainer.style.display = 'block';
+                // inboundContainer is already shown by handlePanelTypeChange
                 // Populate inbounds if available
                 if (panel.default_inbound_id) {
                     const inboundSelect = document.getElementById('edit_default_inbound_id');

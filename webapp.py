@@ -179,7 +179,14 @@ def inject_bot_prefix():
                     return f'/{bot_name}{url}'
         
         return url
-    return dict(add_bot_prefix=add_bot_prefix)
+        return url
+    
+    # Inject current theme
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    return dict(add_bot_prefix=add_bot_prefix, current_theme=current_theme)
 
 # CSRF token context processor removed - no longer needed
 
@@ -1546,7 +1553,16 @@ def dashboard():
         else:
             service['usage_percentage'] = 0
     
-    return render_template('dashboard.html', 
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'dashboard.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/dashboard.html'
+    
+    return render_template(template_name, 
                          user=user,
                          photo_url=photo_url,
                          total_services=total_services,
@@ -1723,7 +1739,16 @@ def services():
     online_services_count = len([s for s in user_services if s.get('is_online', False)])
     total_services_count = len(user_services)
     
-    return render_template('services.html', 
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'services.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/services.html'
+
+    return render_template(template_name, 
                          user=user,
                          photo_url=photo_url,
                          services=user_services,
@@ -1963,7 +1988,16 @@ def service_detail(service_id):
     service['remaining_gb'] = remaining_gb
     service['usage_percentage'] = usage_percentage
     
-    return render_template('service_detail.html', user=user, photo_url=photo_url, service=service)
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'service_detail.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/service_detail.html'
+    
+    return render_template(template_name, user=user, photo_url=photo_url, service=service)
 
 @app.route('/buy-service')
 @login_required
@@ -2040,7 +2074,16 @@ def buy_service():
             renew_service_id = None
             renew_panel_id = None
     
-    return render_template('buy_service.html', 
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'buy_service.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/buy_service.html'
+
+    return render_template(template_name, 
                          user=user, 
                          photo_url=photo_url, 
                          panels=panels,
@@ -2177,7 +2220,34 @@ def recharge():
     
     return render_template('recharge.html', user=user, photo_url=photo_url)
 
-# API Endpoints
+@app.route('/transactions')
+@login_required
+def transactions():
+    """User transactions history page"""
+    user_id = session.get('user_id')
+    db_instance = get_db()
+    user = db_instance.get_user(user_id)
+    
+    if not user:
+        return redirect(url_for('index'))
+    
+    # Get transactions
+    transactions = db_instance.get_user_transactions(user['telegram_id'], limit=100)
+    
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'transactions.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/transactions.html'
+    
+    return render_template(template_name, 
+                         user=user, 
+                         transactions=transactions, 
+                         photo_url=session.get('photo_url', ''))
+
 @app.route('/api/panels')
 @login_required
 @rate_limit(max_requests=30, window_seconds=60)
@@ -2246,7 +2316,8 @@ def api_get_panels():
                     'country_fa': country_fa,
                     'sale_type': panel.get('sale_type', 'gigabyte'),
                     'discount_rate': discount_rate if is_reseller else 0,
-                    'is_discounted': is_reseller and discount_rate > 0
+                    'is_discounted': is_reseller and discount_rate > 0,
+                    'naming_method': panel.get('naming_method', 2)
                 })
         
         return jsonify({'success': True, 'panels': active_panels})
@@ -2476,6 +2547,13 @@ def api_create_service():
         # Get payment method (can be 'balance' or 'card')
         payment_method = data.get('payment_method', 'card')
         purchase_type = data.get('purchase_type', 'gigabyte')  # 'gigabyte' or 'plan'
+        custom_name = data.get('custom_name')
+        
+        # Validate custom name if provided
+        if custom_name:
+            import re
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{2,19}$', custom_name):
+                return jsonify({'success': False, 'message': 'نام اختصاصی نامعتبر است. (۳ تا ۲۰ کاراکتر، حروف انگلیسی و اعداد)'}), 400
         
         if not panel_id:
             return jsonify({'success': False, 'message': 'اطلاعات ناقص است'}), 400
@@ -2773,7 +2851,16 @@ def api_create_service():
             
             # Generate unique username
             from username_formatter import UsernameFormatter
-            client_name = UsernameFormatter.format_client_name(user_id)
+            
+            if custom_name:
+                client_name = custom_name
+                # If naming method is 4 (Custom + Random), append random string
+                if panel.get('naming_method') == 4:
+                     import random, string
+                     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+                     client_name = f"{custom_name}-{random_suffix}"
+            else:
+                client_name = UsernameFormatter.format_client_name(user_id)
             
             # Calculate expiration date
             from datetime import datetime, timedelta
@@ -2910,8 +2997,15 @@ def api_create_service():
         elif payment_method == 'card':
             # Create invoice for card payment
             invoice_notes = None
+            notes_parts = []
             if is_renewal and renew_service_id:
-                invoice_notes = f'renew_service_id: {renew_service_id}'
+                notes_parts.append(f'renew_service_id: {renew_service_id}')
+            
+            if custom_name:
+                notes_parts.append(f'custom_name:{custom_name}')
+                
+            if notes_parts:
+                invoice_notes = ','.join(notes_parts)
             
             db_instance = get_db()
             user_db = db_instance.get_user(user_id)
@@ -3551,138 +3645,6 @@ def profile():
                          transactions=persian_transactions,
                          referrals=referrals,
                          referral_link=referral_link,
-                         photo_url=photo_url)
-
-@app.route('/transactions')
-@login_required
-def transactions():
-    """All transactions page"""
-    user_id = session.get('user_id')
-    db_instance = get_db()
-    user = db_instance.get_user(user_id)
-    
-    # Get all transactions (no limit)
-    all_transactions = db_instance.get_user_transactions(user_id, limit=1000)
-    
-    # Translate transaction descriptions to Persian
-    persian_transactions = []
-    # Persian translation for transaction types
-    trans_type_persian = {
-        'service_purchase': 'خرید سرویس',
-        'balance_added': 'افزایش موجودی',
-        'balance_recharge': 'شارژ حساب',
-        'refund': 'بازگشت مبلغ',
-        'referral_reward': 'پاداش دعوت',
-        'welcome_bonus': 'هدیه ثبت نام',
-        'gift': 'هدیه',
-        'admin_credit': 'افزایش توسط ادمین',
-        'admin_debit': 'کاهش توسط ادمین',
-        'volume_purchase': 'خرید حجم',
-        'service_renewal': 'تمدید سرویس'
-    }
-    
-    for trans in all_transactions:
-        trans_copy = trans.copy()
-        # Translate transaction type
-        trans_type = trans_copy.get('transaction_type', '')
-        if trans_type:
-            trans_copy['transaction_type_persian'] = trans_type_persian.get(trans_type, trans_type.replace('_', ' '))
-        
-        # Format date to Persian
-        if trans_copy.get('created_at'):
-            try:
-                from persian_datetime import PersianDateTime
-                from datetime import datetime
-                # Parse the datetime string
-                dt = trans_copy['created_at']
-                if isinstance(dt, str):
-                    # Handle different datetime formats
-                    if 'T' in dt:
-                        dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
-                    else:
-                        dt = datetime.strptime(dt, '%Y-%m-%d %H:%M:%S')
-                elif isinstance(dt, datetime):
-                    pass  # Already a datetime object
-                
-                # Convert to Persian
-                persian_dt_str = PersianDateTime.format_datetime(dt, include_time=True)
-                # Format to YYYY/MM/DD HH:MM (without seconds)
-                if ' ' in persian_dt_str:
-                    date_part, time_part = persian_dt_str.split(' ', 1)
-                    time_part = ':'.join(time_part.split(':')[:2])  # Remove seconds
-                    persian_dt_str = f"{date_part} {time_part}"
-                trans_copy['created_at_persian'] = persian_dt_str
-                trans_copy['created_at'] = persian_dt_str
-            except Exception as e:
-                logger.error(f"Error formatting date: {e}")
-                # Fallback to original format
-                trans_copy['created_at_persian'] = str(trans_copy.get('created_at', ''))[:16]
-        
-        # Description is already in Persian, but ensure it's properly formatted
-        desc = trans_copy.get('description', '')
-        if desc:
-            # Check if it's a payment callback (recharge)
-            if 'callback' in desc.lower() and 'order' in desc.lower():
-                trans_copy['description'] = 'شارژ حساب'
-            elif 'payment' in desc.lower() and 'invoice' in desc.lower():
-                # Handle "Payment for invoice 159" pattern
-                import re
-                match = re.search(r'invoice\s*#%s(\d+)', desc, re.IGNORECASE)
-                if match:
-                    invoice_num = match.group(1)
-                    trans_copy['description'] = f'پرداخت برای فاکتور #{invoice_num}'
-                else:
-                    trans_copy['description'] = 'پرداخت برای فاکتور'
-            else:
-                # Common English to Persian translations
-                translations = {
-                    'Payment for invoice': 'پرداخت برای فاکتور',
-                    'for invoice': 'برای فاکتور',
-                    'invoice': 'فاکتور',
-                    'Balance recharge': 'شارژ حساب',
-                    'Service purchase': 'خرید سرویس',
-                    'Volume added': 'افزایش حجم',
-                    'Referral bonus': 'پاداش دعوت',
-                    'Admin adjustment': 'تنظیم توسط ادمین',
-                    'Purchase service': 'خرید سرویس',
-                    'Add volume': 'افزایش حجم',
-                    'Recharge': 'شارژ حساب',
-                    'Purchase': 'خرید',
-                    'Volume purchase': 'خرید اشتراک',
-                    'Volume': 'حجم',
-                    'Service': 'سرویس',
-                    'Service creation failed': 'خطا در ایجاد سرویس',
-                    'payment': 'پرداخت',
-                    'Payment': 'پرداخت',
-                    'Payment completed': 'پرداخت موفق',
-                    'Payment callback': 'بازگشت از درگاه پرداخت',
-                    'Gateway': 'درگاه',
-                    'gateway': 'درگاه',
-                    'callback': 'بازگشت از درگاه',
-                    'order': 'سفارش',
-                    'GB': 'گیگابایت'
-                }
-                
-                # Replace English terms with Persian (longer patterns first)
-                persian_desc = desc
-                # Sort by length (descending) to match longer patterns first
-                sorted_translations = sorted(translations.items(), key=lambda x: len(x[0]), reverse=True)
-                for en, fa in sorted_translations:
-                    if en.lower() in persian_desc.lower():
-                        # Case-insensitive replacement
-                        import re
-                        persian_desc = re.sub(re.escape(en), fa, persian_desc, flags=re.IGNORECASE)
-                
-                trans_copy['description'] = persian_desc
-        
-        persian_transactions.append(trans_copy)
-    
-    # Get photo_url from session
-    photo_url = session.get('photo_url', '')
-    
-    return render_template('transactions.html',
-                         user=user,
-                         transactions=persian_transactions,
                          photo_url=photo_url)
 
 @app.route('/referrals')
@@ -4373,26 +4335,23 @@ def tickets():
     if not user:
         return redirect(url_for('index'))
     
-    # Get user database ID
-    user_db_id = user.get('id')
-    if not user_db_id:
-        return redirect(url_for('index'))
+    # Get user tickets - returns (list, total) tuple
+    tickets_list, total = db_instance.get_user_tickets(user['id'])
     
-    page = request.args.get('page', 1, type=int)
-    tickets_list, total = db_instance.get_user_tickets(user_db_id, page=page, per_page=10)
-    total_pages = (total + 9) // 10
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
     
-    return render_template('tickets.html', 
-                         user=user,
-                         tickets=tickets_list,
-                         current_page=page,
-                         total_pages=total_pages,
-                         total=total,
-                         photo_url=session.get('photo_url', ''))
+    template_name = 'tickets.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/tickets.html'
+    
+    return render_template(template_name, user=user, tickets=tickets_list, total=total, photo_url=session.get('photo_url', ''))
 
-@app.route('/tickets/new')
+@app.route('/tickets/new', methods=['GET', 'POST'])
 @login_required
-def ticket_new():
+def new_ticket():
     """Create new ticket page"""
     user_id = session.get('user_id')
     db_instance = get_db()
@@ -4401,14 +4360,36 @@ def ticket_new():
     if not user:
         return redirect(url_for('index'))
     
-    return render_template('ticket_new.html', 
-                         user=user,
-                         photo_url=session.get('photo_url', ''))
+    if request.method == 'POST':
+        subject = request.form.get('subject')
+        message = request.form.get('message')
+        priority = request.form.get('priority', 'normal')
+        
+        if not subject or not message:
+            flash('لطفاً عنوان و متن پیام را وارد کنید', 'error')
+        else:
+            ticket_id = db_instance.create_ticket(user['id'], subject, priority, message)
+            if ticket_id:
+                flash('تیکت با موفقیت ایجاد شد', 'success')
+                return redirect(url_for('ticket_detail', ticket_id=ticket_id))
+            else:
+                flash('خطا در ایجاد تیکت', 'error')
+    
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'new_ticket.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/ticket_new.html'
+    
+    return render_template(template_name, user=user, photo_url=session.get('photo_url', ''))
 
-@app.route('/tickets/<int:ticket_id>')
+@app.route('/tickets/<int:ticket_id>', methods=['GET', 'POST'])
 @login_required
 def ticket_detail(ticket_id):
-    """Ticket detail page"""
+    """Ticket detail and reply page"""
     user_id = session.get('user_id')
     db_instance = get_db()
     user = db_instance.get_user(user_id)
@@ -4416,20 +4397,39 @@ def ticket_detail(ticket_id):
     if not user:
         return redirect(url_for('index'))
     
-    user_db_id = user.get('id')
-    ticket = db_instance.get_ticket(ticket_id, user_db_id)
+    ticket = db_instance.get_ticket(ticket_id)
     
-    if not ticket:
-        flash('تیکت یافت نشد', 'error')
+    # Check ownership
+    if not ticket or ticket['user_id'] != user['id']:
         return redirect(url_for('tickets'))
+    
+    if request.method == 'POST':
+        message = request.form.get('message')
+        
+        if not message:
+            flash('متن پیام نمی‌تواند خالی باشد', 'error')
+        else:
+            if ticket['status'] == 'closed':
+                flash('این تیکت بسته شده است', 'error')
+            else:
+                if db_instance.add_ticket_reply(ticket_id, user['id'], message, is_admin=False):
+                    flash('پاسخ شما ارسال شد', 'success')
+                    return redirect(url_for('ticket_detail', ticket_id=ticket_id))
+                else:
+                    flash('خطا در ارسال پاسخ', 'error')
     
     replies = db_instance.get_ticket_replies(ticket_id)
     
-    return render_template('ticket_detail.html',
-                         user=user,
-                         ticket=ticket,
-                         replies=replies,
-                         photo_url=session.get('photo_url', ''))
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'ticket_detail.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/ticket_detail.html'
+    
+    return render_template(template_name, user=user, ticket=ticket, replies=replies, photo_url=session.get('photo_url', ''))
 
 @app.route('/api/tickets/create', methods=['POST'])
 @login_required
@@ -5125,6 +5125,7 @@ def admin_menu_layout():
         {'key': 'account_balance', 'text': '💰 موجودی', 'callback': 'account_balance', 'type': 'callback', 'description': 'نمایش موجودی حساب کاربری'},
         {'key': 'referral_system', 'text': '🎁 دعوت دوستان', 'callback': 'referral_system', 'type': 'callback', 'description': 'سیستم دعوت دوستان و دریافت پاداش'},
         {'key': 'help', 'text': '❓ راهنما و پشتیبانی', 'callback': 'help', 'type': 'callback', 'description': 'راهنما و پشتیبانی کاربران'},
+        {'key': 'wheel_of_fortune', 'text': '🎰 گردونه شانس', 'callback': 'wheel_of_fortune', 'type': 'webapp', 'description': 'گردونه شانس با جوایز ویژه (نیاز به وب اپلیکیشن)'},
         {'key': 'webapp', 'text': '🌐 ورود به وب اپلیکیشن', 'callback': 'webapp', 'type': 'webapp', 'description': 'ورود به وب اپلیکیشن ربات'},
         {'key': 'admin_panel', 'text': '⚙️ پنل مدیریت', 'callback': 'admin_panel', 'type': 'callback', 'description': 'ورود به پنل مدیریت (فقط برای ادمین)'},
     ]
@@ -5137,7 +5138,8 @@ def admin_menu_layout():
         for btn in available_buttons:
             if btn['key'] == 'webapp':
                 btn['webapp_url'] = webapp_url
-                break
+            elif btn['key'] == 'wheel_of_fortune':
+                btn['webapp_url'] = f"{webapp_url}/wheel"
     
     photo_url = session.get('photo_url', '')
     
@@ -6256,6 +6258,10 @@ def api_admin_add_panel():
             return jsonify({'success': False, 'message': 'داده‌های درخواست نامعتبر است'}), 400
         
         # Validate required fields
+        # Validate required fields
+        panel_type = data.get('panel_type', '3x-ui')
+        
+        # Validate required fields
         if not data.get('name') or not data.get('url') or not data.get('username') or not data.get('password'):
             return jsonify({'success': False, 'message': 'لطفاً تمام فیلدهای الزامی را پر کنید'}), 400
         
@@ -6352,6 +6358,8 @@ def api_admin_fetch_panel_metadata():
         from panel_manager import PanelManager
         from marzban_manager import MarzbanPanelManager
         from rebecca_manager import RebeccaPanelManager
+        from marzneshin_manager import MarzneshinPanelManager
+        from guard_manager import GuardPanelManager
         
         # We don't need db for this, just the manager classes
         
@@ -6362,6 +6370,10 @@ def api_admin_fetch_panel_metadata():
             manager = RebeccaPanelManager()
         elif panel_type == 'pasargad':
             manager = PasargadPanelManager()
+        elif panel_type == 'marzneshin':
+            manager = MarzneshinPanelManager()
+        elif panel_type == 'guard':
+            manager = GuardPanelManager()
         else:
             manager = PanelManager()
             
@@ -8534,6 +8546,208 @@ def rate_limit_exceeded(e):
     logger.warning(f"Rate limit exceeded from {client_ip}: {request.path}")
     return Response('Too Many Requests', status=429, mimetype='text/plain')
 
+
+# Theme Management Route
+@app.route('/admin/settings/theme', methods=['POST'])
+def update_theme():
+    """Update admin panel theme"""
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'message': 'لطفا وارد شوید'}), 401
+        
+    try:
+        data = request.get_json()
+        theme = data.get('theme')
+        
+        if theme not in ['default', 'modern']:
+            return jsonify({'success': False, 'message': 'تم نامعتبر است'}), 400
+            
+        from settings_manager import SettingsManager
+        settings_mgr = SettingsManager()
+        if settings_mgr.set_theme(theme, user_id=session.get('user_id')):
+            return jsonify({'success': True, 'message': 'تم با موفقیت تغییر کرد'})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در ذخیره تنظیمات'}), 500
+            
+    except Exception as e:
+        return secure_error_response(e)
+
+
+
+# ==================== WHEEL OF FORTUNE ROUTES ====================
+
+@app.route('/wheel')
+@login_required
+def wheel_page():
+    """Wheel of Fortune page"""
+    user_id = session.get('user_id')
+    db_instance = get_db()
+    user = db_instance.get_user(user_id)
+    
+    if not user:
+        return redirect(url_for('index'))
+        
+    photo_url = session.get('photo_url', '')
+    
+    # Theme Selection
+    from settings_manager import SettingsManager
+    settings_mgr = SettingsManager()
+    current_theme = settings_mgr.get_theme()
+    
+    template_name = 'wheel.html'
+    if current_theme == 'modern':
+        template_name = 'themes/modern/wheel.html'
+        
+    return render_template(template_name, user=user, photo_url=photo_url)
+
+@app.route('/api/wheel/config')
+@login_required
+def api_wheel_config():
+    """Get wheel configuration"""
+    try:
+        from lottery_system import lottery_system
+        db_instance = get_db()
+        lottery_system.set_database(db_instance)
+        
+        config = lottery_system.get_wheel_config()
+        
+        # Check if user can spin
+        user_id = session.get('telegram_id')
+        can_spin, message = lottery_system.can_spin(user_id)
+        
+        return jsonify({
+            'success': True,
+            'config': config,
+            'can_spin': can_spin,
+            'message': message
+        })
+    except Exception as e:
+        logger.error(f"Error getting wheel config: {e}")
+        return jsonify({'success': False, 'message': 'خطا در دریافت تنظیمات گردونه'}), 500
+
+@app.route('/api/wheel/spin', methods=['POST'])
+@login_required
+@rate_limit(max_requests=1, window_seconds=5)
+def api_wheel_spin():
+    """Spin the wheel"""
+    try:
+        from lottery_system import lottery_system
+        db_instance = get_db()
+        lottery_system.set_database(db_instance)
+        
+        user_id = session.get('telegram_id')
+        
+        success, result = lottery_system.spin_wheel(user_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'result': result
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': result.get('message', 'خطا در چرخش گردونه')
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error spinning wheel: {e}")
+        return jsonify({'success': False, 'message': 'خطا در انجام عملیات'}), 500
+
+@app.route('/admin/wheel')
+@admin_required
+def admin_wheel():
+    """Wheel of Fortune configuration page"""
+    user_id = session.get('user_id')
+    db_instance = get_db()
+    user = db_instance.get_user(user_id)
+    photo_url = session.get('photo_url', '')
+    return render_template('admin/wheel.html', user=user, photo_url=photo_url)
+
+@app.route('/api/admin/wheel/settings', methods=['GET', 'POST'])
+@admin_required
+def api_admin_wheel_settings():
+    """Get or update wheel settings"""
+    try:
+        db_instance = get_db()
+        
+        if request.method == 'GET':
+            settings = db_instance.get_wheel_settings()
+            return jsonify({'success': True, 'settings': settings})
+            
+        elif request.method == 'POST':
+            data = request.json
+            success = True
+            for key, value in data.items():
+                if not db_instance.set_wheel_setting(key, value):
+                    success = False
+            
+            if success:
+                return jsonify({'success': True, 'message': 'تنظیمات با موفقیت ذخیره شد'})
+            else:
+                return jsonify({'success': False, 'message': 'خطا در ذخیره برخی تنظیمات'}), 500
+                
+    except Exception as e:
+        logger.error(f"Error managing wheel settings: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/wheel/prizes', methods=['GET', 'POST'])
+@admin_required
+def api_admin_wheel_prizes():
+    """Get or add wheel prizes"""
+    try:
+        db_instance = get_db()
+        
+        if request.method == 'GET':
+            prizes = db_instance.get_prizes(active_only=False)
+            return jsonify({'success': True, 'prizes': prizes})
+            
+        elif request.method == 'POST':
+            data = request.json
+            prize_id = db_instance.add_prize(
+                name=data.get('name'),
+                type=data.get('type'),
+                value=float(data.get('value', 0)),
+                probability=float(data.get('probability', 0)),
+                is_active=data.get('is_active', True),
+                display_order=int(data.get('display_order', 0))
+            )
+            
+            if prize_id:
+                return jsonify({'success': True, 'message': 'جایزه با موفقیت اضافه شد', 'prize_id': prize_id})
+            else:
+                return jsonify({'success': False, 'message': 'خطا در افزودن جایزه'}), 500
+                
+    except Exception as e:
+        logger.error(f"Error managing wheel prizes: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/wheel/prizes/<int:prize_id>', methods=['PUT', 'DELETE'])
+@admin_required
+def api_admin_wheel_prize_detail(prize_id):
+    """Update or delete a prize"""
+    try:
+        db_instance = get_db()
+        
+        if request.method == 'PUT':
+            data = request.json
+            success = db_instance.update_prize(prize_id, **data)
+            if success:
+                return jsonify({'success': True, 'message': 'جایزه با موفقیت بروزرسانی شد'})
+            else:
+                return jsonify({'success': False, 'message': 'خطا در بروزرسانی جایزه'}), 500
+                
+        elif request.method == 'DELETE':
+            success = db_instance.delete_prize(prize_id)
+            if success:
+                return jsonify({'success': True, 'message': 'جایزه با موفقیت حذف شد'})
+            else:
+                return jsonify({'success': False, 'message': 'خطا در حذف جایزه'}), 500
+                
+    except Exception as e:
+        logger.error(f"Error managing prize detail: {e}")
+        return secure_error_response(e)
+
+
 if __name__ == '__main__':
     # Create templates and static directories if they don't exist
     os.makedirs('templates', exist_ok=True)
@@ -8547,4 +8761,3 @@ if __name__ == '__main__':
     
     # Run the app (debug=False prevents memory leaks in production)
     app.run(host='0.0.0.0', port=port, debug=debug_mode, threaded=True)
-

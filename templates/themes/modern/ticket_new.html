@@ -1,0 +1,72 @@
+{% extends "themes/modern/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div class="header-content">
+        <a href="{{ url_for('tickets') }}" class="back-link">
+            <i class="fas fa-arrow-right"></i>
+            بازگشت
+        </a>
+        <h1 class="page-title">تیکت جدید</h1>
+        <p class="page-subtitle">ارسال درخواست پشتیبانی جدید</p>
+    </div>
+</div>
+
+<div class="form-container-centered">
+    <div class="glass-card form-card">
+        <form method="POST" action="{{ url_for('new_ticket') }}">
+            <div class="form-group">
+                <label for="subject" class="form-label">موضوع تیکت</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-heading input-icon"></i>
+                    <input type="text" id="subject" name="subject" class="form-input" placeholder="مثلاً: مشکل در اتصال"
+                        required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">اولویت</label>
+                <div class="priority-selector">
+                    <label class="priority-option">
+                        <input type="radio" name="priority" value="low">
+                        <span class="priority-card low">
+                            <i class="fas fa-arrow-down"></i>
+                            کم
+                        </span>
+                    </label>
+                    <label class="priority-option">
+                        <input type="radio" name="priority" value="normal" checked>
+                        <span class="priority-card normal">
+                            <i class="fas fa-info-circle"></i>
+                            معمولی
+                        </span>
+                    </label>
+                    <label class="priority-option">
+                        <input type="radio" name="priority" value="high">
+                        <span class="priority-card high">
+                            <i class="fas fa-exclamation-circle"></i>
+                            زیاد
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="message" class="form-label">متن پیام</label>
+                <div class="input-wrapper textarea-wrapper">
+                    <i class="fas fa-comment-alt input-icon"></i>
+                    <textarea id="message" name="message" class="form-input" rows="6"
+                        placeholder="توضیحات کامل مشکل یا درخواست خود را بنویسید..." required></textarea>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-lg ripple">
+                    <i class="fas fa-paper-plane"></i>
+                    ارسال تیکت
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

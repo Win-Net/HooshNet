@@ -1,0 +1,711 @@
+{% extends "themes/modern/base.html" %}
+
+{% block title %}جزئیات سرویس - {{ service.client_name or 'سرویس' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --app-bg: #0f172a;
+        --card-bg: rgba(30, 41, 59, 0.7);
+        --card-border: rgba(255, 255, 255, 0.08);
+        --glass-bg: rgba(15, 23, 42, 0.6);
+        --primary: #3b82f6;
+        --primary-dark: #2563eb;
+        --accent: #06b6d4;
+        --text-main: #f1f5f9;
+        --text-muted: #94a3b8;
+        --success: #10b981;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+        --gradient-card: linear-gradient(180deg, rgba(51, 65, 85, 0.5) 0%, rgba(30, 41, 59, 0.5) 100%);
+        --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+    }
+
+    /* Reset & Base */
+    * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .app-container {
+        max-width: 480px;
+        margin: 0 auto;
+        padding: 0 16px 100px 16px;
+        /* Bottom padding for nav */
+        min-height: 100vh;
+        position: relative;
+    }
+
+    /* Header */
+    .app-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 4px;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        margin-bottom: 24px;
+    }
+
+    .back-btn {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        color: var(--text-main);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--card-border);
+        transition: all 0.2s ease;
+        text-decoration: none;
+    }
+
+    .back-btn:active {
+        transform: scale(0.95);
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .page-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+
+    /* Hero Card */
+    .hero-card {
+        background: var(--gradient-card);
+        border: 1px solid var(--card-border);
+        border-radius: 24px;
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 24px;
+        box-shadow: var(--shadow-lg), var(--shadow-glow);
+    }
+
+    .hero-bg-glow {
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .hero-content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        margin-bottom: 16px;
+    }
+
+    .status-badge.offline {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .service-name {
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin-bottom: 4px;
+        background: linear-gradient(to right, #fff, #cbd5e1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .service-id {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        font-family: monospace;
+        letter-spacing: 1px;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .stat-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 20px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Circular Progress */
+    .progress-ring-container {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .progress-ring {
+        transform: rotate(-90deg);
+    }
+
+    .progress-ring__circle {
+        transition: stroke-dashoffset 1s ease-in-out;
+        transform-origin: 50% 50%;
+        stroke-linecap: round;
+    }
+
+    .progress-bg {
+        stroke: rgba(255, 255, 255, 0.05);
+    }
+
+    .progress-value {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .progress-text {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-main);
+    }
+
+    .progress-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    /* Info Rows */
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .info-row:last-child {
+        border-bottom: none;
+    }
+
+    .info-label {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+
+    .info-val {
+        font-weight: 600;
+        color: var(--text-main);
+    }
+
+    /* Action Buttons */
+    .action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+
+    .action-btn {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        color: var(--text-main);
+        text-decoration: none;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .action-btn:active {
+        transform: scale(0.98);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .action-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--primary);
+    }
+
+    .action-btn.renew .action-icon {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success);
+    }
+
+    .action-btn.volume .action-icon {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--warning);
+    }
+
+    .action-btn.location .action-icon {
+        background: rgba(6, 182, 212, 0.1);
+        color: var(--accent);
+    }
+
+    .action-text {
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    /* Copy Link Box */
+    .copy-box {
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px dashed rgba(59, 130, 246, 0.3);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 24px;
+    }
+
+    .copy-box:active {
+        background: rgba(59, 130, 246, 0.15);
+    }
+
+    .copy-content {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .copy-icon {
+        color: var(--primary);
+        font-size: 1.2rem;
+    }
+
+    /* Modals */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(8px);
+        z-index: 100;
+        display: flex;
+        align-items: flex-end;
+        /* Bottom sheet on mobile */
+        justify-content: center;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .modal-overlay.visible {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    .modal-sheet {
+        background: #1e293b;
+        width: 100%;
+        max-width: 480px;
+        border-radius: 24px 24px 0 0;
+        padding: 24px;
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-top: 1px solid var(--card-border);
+    }
+
+    .modal-overlay.visible .modal-sheet {
+        transform: translateY(0);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .modal-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+
+    .modal-close {
+        background: rgba(255, 255, 255, 0.05);
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .panel-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        margin-bottom: 8px;
+        cursor: pointer;
+    }
+
+    .panel-item:active {
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    @media (min-width: 768px) {
+        .modal-overlay {
+            align-items: center;
+        }
+
+        .modal-sheet {
+            border-radius: 24px;
+            width: 90%;
+            transform: scale(0.95);
+            opacity: 0;
+        }
+
+        .modal-overlay.visible .modal-sheet {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    /* Animations */
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .anim-entry {
+        animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        opacity: 0;
+    }
+
+    .delay-1 {
+        animation-delay: 0.1s;
+    }
+
+    .delay-2 {
+        animation-delay: 0.2s;
+    }
+
+    .delay-3 {
+        animation-delay: 0.3s;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="app-container">
+
+    <!-- Header -->
+    <header class="app-header">
+        <a href="{{ add_bot_prefix('/services') }}" class="back-btn">
+            <i class="fas fa-arrow-right"></i>
+        </a>
+        <h1 class="page-title">جزئیات سرویس</h1>
+        <div style="width: 40px;"></div> <!-- Spacer for balance -->
+    </header>
+
+    <!-- Hero Card -->
+    <div class="hero-card anim-entry">
+        <div class="hero-bg-glow"></div>
+        <div class="hero-content">
+            <div class="status-badge {% if not service.is_online %}offline{% endif %}">
+                <span class="dot" style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>
+                {{ 'سرویس فعال' if service.is_online else 'غیرفعال' }}
+            </div>
+
+            <h2 class="service-name">{{ service.client_name or 'سرویس بدون نام' }}</h2>
+            <div class="service-id">ID: #{{ service.id }}</div>
+
+            <div style="margin-top: 24px; display: flex; gap: 24px;">
+                <div>
+                    <div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 4px;">حجم کل</div>
+                    <div style="font-size: 1.2rem; font-weight: 700;">
+                        {{ "%.1f"|format(service.total_gb|default(0)|float) }} <span
+                            style="font-size: 0.9rem; color: var(--primary);">GB</span>
+                    </div>
+                </div>
+                <div>
+                    <div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 4px;">انقضا</div>
+                    <div style="font-size: 1.2rem; font-weight: 700;">
+                        {% if service.remaining_days is not none %}
+                        {{ service.remaining_days }} <span
+                            style="font-size: 0.9rem; color: var(--text-muted);">روز</span>
+                        {% else %}
+                        ∞
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Circular Usage Stats -->
+    <div class="anim-entry delay-1">
+        <div class="progress-ring-container">
+            <svg class="progress-ring" width="120" height="120">
+                <circle class="progress-bg" stroke="currentColor" stroke-width="8" fill="transparent" r="52" cx="60"
+                    cy="60" />
+                <circle class="progress-ring__circle" stroke="url(#gradient)" stroke-width="8" fill="transparent" r="52"
+                    cx="60" cy="60" />
+                <defs>
+                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#3b82f6" />
+                        <stop offset="100%" stop-color="#06b6d4" />
+                    </linearGradient>
+                </defs>
+            </svg>
+            <div class="progress-value">
+                <span class="progress-text">{{ service.usage_percentage|default(0)|int }}%</span>
+                <span class="progress-label">مصرف شده</span>
+            </div>
+        </div>
+
+        <div class="stat-card" style="margin-bottom: 24px;">
+            <div style="width: 100%;">
+                <div class="info-row">
+                    <span class="info-label">مصرف دانلود</span>
+                    <span class="info-val">{{ "%.2f"|format(service.used_gb|default(0)|float) }} GB</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">حجم باقیمانده</span>
+                    <span class="info-val" style="color: var(--primary);">{{
+                        "%.2f"|format(service.remaining_gb|default(0)|float) }} GB</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">تاریخ انقضا</span>
+                    <span class="info-val">{{ service.expiry_date_persian or 'نامحدود' }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy Link Action -->
+    {% if service.subscription_link %}
+    <div class="copy-box anim-entry delay-2" onclick="copySubscriptionLink()">
+        <div class="copy-content">
+            <div class="action-icon" style="width: 32px; height: 32px; font-size: 1rem;">
+                <i class="fas fa-link"></i>
+            </div>
+            <div>
+                <div style="font-weight: 600; font-size: 0.95rem;">لینک اتصال</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">برای کپی ضربه بزنید</div>
+            </div>
+        </div>
+        <i class="fas fa-copy" style="color: var(--primary);"></i>
+    </div>
+    {% endif %}
+
+    <!-- Action Grid -->
+    <div class="action-grid anim-entry delay-3">
+        {% if service.product_id %}
+        <a href="{{ add_bot_prefix('/renew-service/' + service.id|string) }}" class="action-btn renew">
+            <div class="action-icon"><i class="fas fa-sync-alt"></i></div>
+            <span class="action-text">تمدید سرویس</span>
+        </a>
+        {% else %}
+        <a href="{{ add_bot_prefix('/add-volume/' + service.id|string) }}" class="action-btn volume">
+            <div class="action-icon"><i class="fas fa-database"></i></div>
+            <span class="action-text">افزایش حجم</span>
+        </a>
+        {% endif %}
+
+        <div class="action-btn location" onclick="showChangePanelModal()">
+            <div class="action-icon"><i class="fas fa-map-marker-alt"></i></div>
+            <span class="action-text">تغییر لوکیشن</span>
+        </div>
+
+        <div class="action-btn" onclick="showQRModal()">
+            <div class="action-icon" style="background: rgba(255,255,255,0.1); color: var(--text-main);"><i
+                    class="fas fa-qrcode"></i></div>
+            <span class="action-text">کیوآر کد</span>
+        </div>
+
+        <a href="https://t.me/share/url?url={{ service.subscription_link }}" class="action-btn">
+            <div class="action-icon" style="background: rgba(255,255,255,0.1); color: var(--text-main);"><i
+                    class="fas fa-share-alt"></i></div>
+            <span class="action-text">اشتراک گذاری</span>
+        </a>
+    </div>
+
+</div>
+
+<!-- QR Modal -->
+<div class="modal-overlay" id="qrModal" onclick="closeQRModal()">
+    <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 class="modal-title">QR Code اتصال</h3>
+            <button class="modal-close" onclick="closeQRModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
+            <div id="qrcodeContainer" style="background: white; padding: 16px; border-radius: 20px;"></div>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">برای اتصال اسکن کنید</p>
+        </div>
+    </div>
+</div>
+
+<!-- Change Panel Modal -->
+<div class="modal-overlay" id="changePanelModal" onclick="closeChangePanelModal()">
+    <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 class="modal-title">تغییر لوکیشن</h3>
+            <button class="modal-close" onclick="closeChangePanelModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="panelsList" style="max-height: 40vh; overflow-y: auto; padding-bottom: 20px;">
+            <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+    const subLink = '{{ service.subscription_link }}';
+    const sId = {{ service.id }};
+    const usagePercent = {{ service.usage_percentage|default (0) | int }};
+
+    // Initialize Progress Ring
+    document.addEventListener('DOMContentLoaded', () => {
+        const circle = document.querySelector('.progress-ring__circle');
+        const radius = circle.r.baseVal.value;
+        const circumference = radius * 2 * Math.PI;
+
+        circle.style.strokeDasharray = `${circumference} ${circumference}`;
+        circle.style.strokeDashoffset = circumference;
+
+        const offset = circumference - (usagePercent / 100) * circumference;
+        setTimeout(() => {
+            circle.style.strokeDashoffset = offset;
+        }, 500);
+    });
+
+    function copySubscriptionLink() {
+        if (!subLink) return;
+        navigator.clipboard.writeText(subLink).then(() => {
+            // Custom toast implementation or use existing showToast
+            if (typeof showToast === 'function') {
+                showToast('لینک اتصال کپی شد', 'success');
+            } else {
+                alert('لینک کپی شد');
+            }
+        });
+    }
+
+    function showQRModal() {
+        const modal = document.getElementById('qrModal');
+        modal.classList.add('visible');
+        const c = document.getElementById('qrcodeContainer');
+        c.innerHTML = '';
+        new QRCode(c, { text: subLink, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.L });
+    }
+    function closeQRModal() { document.getElementById('qrModal').classList.remove('visible'); }
+
+    function showChangePanelModal() {
+        document.getElementById('changePanelModal').classList.add('visible');
+        const list = document.getElementById('panelsList');
+
+        fetch(fixUrl(`/api/service/${sId}/compatible-panels`))
+            .then(r => r.json())
+            .then(d => {
+                if (d.success && d.panels.length) {
+                    list.innerHTML = d.panels.map(p => `
+                        <div class="panel-item" onclick="selectPanel(${p.id})">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="width: 40px; height: 40px; background: rgba(59,130,246,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--primary);">
+                                    <i class="fas fa-server"></i>
+                                </div>
+                                <div>
+                                    <div style="font-weight: 700; color: var(--text-main);">${p.name}</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted);">${p.price_per_gb.toLocaleString()} ت/GB</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-left" style="color: var(--text-muted); font-size: 0.8rem;"></i>
+                        </div>
+                    `).join('');
+                } else {
+                    list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">هیچ لوکیشن دیگری برای این سرویس یافت نشد.</div>';
+                }
+            })
+            .catch(() => {
+                list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--danger);">خطا در دریافت لیست.</div>';
+            });
+    }
+    function closeChangePanelModal() { document.getElementById('changePanelModal').classList.remove('visible'); }
+
+    function selectPanel(pid) {
+        if (!confirm('آیا از تغییر لوکیشن سرویس اطمینان دارید؟')) return;
+
+        // Show loading
+        if (typeof showToast === 'function') showToast('در حال تغییر لوکیشن...', 'info');
+
+        fetch(fixUrl(`/api/service/${sId}/change-panel`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ panel_id: pid })
+        }).then(r => r.json()).then(d => {
+            if (d.success) {
+                if (typeof showToast === 'function') showToast('لوکیشن با موفقیت تغییر کرد', 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                if (typeof showToast === 'function') showToast(d.message || 'خطا در تغییر لوکیشن', 'error');
+            }
+        }).catch(err => {
+            if (typeof showToast === 'function') showToast('خطای ارتباط با سرور', 'error');
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "themes/modern/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div class="header-content">
+        <h1 class="page-title">تراکنش‌ها</h1>
+        <p class="page-subtitle">تاریخچه مالی و پرداخت‌های شما</p>
+    </div>
+    <div class="header-actions">
+        <div class="balance-badge">
+            <span class="balance-label">موجودی:</span>
+            <span class="balance-value">{{ "{:,}".format(user.balance or 0) }}</span>
+            <span class="balance-unit">تومان</span>
+        </div>
+    </div>
+</div>
+
+<div class="transactions-container">
+    {% if transactions %}
+    <div class="timeline-view">
+        {% for tx in transactions %}
+        <div class="timeline-item">
+            <div class="timeline-marker {{ 'positive' if tx.amount > 0 else 'negative' }}"></div>
+            <div class="timeline-content glass-card">
+                <div class="tx-header">
+                    <div class="tx-icon {{ 'positive' if tx.amount > 0 else 'negative' }}">
+                        {% if tx.amount > 0 %}
+                        <i class="fas fa-arrow-down"></i>
+                        {% else %}
+                        <i class="fas fa-arrow-up"></i>
+                        {% endif %}
+                    </div>
+                    <div class="tx-info">
+                        <div class="tx-title">{{ tx.description or 'تراکنش' }}</div>
+                        <div class="tx-meta">
+                            <span class="tx-date">
+                                <i class="far fa-clock"></i>
+                                {{ tx.created_at|replace('T', ' ')|truncate(16, True, '') }}
+                            </span>
+                            {% if tx.authority %}
+                            <span class="tx-id">ID: {{ tx.authority }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="tx-amount {{ 'positive' if tx.amount > 0 else 'negative' }}">
+                        <span class="amount-value">{{ "{:,}".format(tx.amount|abs) }}</span>
+                        <span class="amount-unit">تومان</span>
+                    </div>
+                </div>
+                {% if tx.status %}
+                <div class="tx-footer">
+                    <span class="status-badge {{ tx.status }}">
+                        {% if tx.status == 'paid' or tx.status == 'completed' or tx.status == 'success' %}
+                        <i class="fas fa-check-circle"></i> موفق
+                        {% elif tx.status == 'pending' %}
+                        <i class="fas fa-clock"></i> در انتظار
+                        {% else %}
+                        <i class="fas fa-times-circle"></i> ناموفق
+                        {% endif %}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state glass-card">
+        <div class="empty-icon">
+            <i class="fas fa-receipt"></i>
+        </div>
+        <h3>هنوز تراکنشی ندارید</h3>
+        <p>لیست تراکنش‌های مالی شما در اینجا نمایش داده می‌شود</p>
+        <a href="{{ url_for('recharge') }}" class="btn btn-primary ripple">
+            <i class="fas fa-plus"></i>
+            افزایش موجودی
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

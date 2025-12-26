@@ -315,3 +315,206 @@ class UsernameFormatter:
                 return "🔴 آفلاین"
         
         return "🔴 آفلاین"
+
+
+# ==================== Username Generation Methods ====================
+
+from enum import Enum
+
+
+class NamingMethod(Enum):
+    """8 different username generation methods (from mirza_pro)"""
+    USERNAME_SEQUENTIAL = 1    # نام کاربری + عدد ترتیبی
+    ID_RANDOM = 2              # آیدی عددی + رندوم
+    USER_CUSTOM = 3            # نام دلخواه کاربر
+    USER_CUSTOM_RANDOM = 4     # نام دلخواه + رندوم
+    ADMIN_TEXT_RANDOM = 5      # متن ادمین + رندوم
+    ADMIN_TEXT_SEQUENTIAL = 6  # متن ادمین + ترتیبی
+    ID_SEQUENTIAL = 7          # آیدی + ترتیبی
+    RESELLER_SEQUENTIAL = 8    # متن نماینده + ترتیبی
+
+
+NAMING_METHOD_NAMES = {
+    NamingMethod.USERNAME_SEQUENTIAL: '📝 نام کاربری + شماره ترتیبی',
+    NamingMethod.ID_RANDOM: '🔢 آیدی عددی + رندوم',
+    NamingMethod.USER_CUSTOM: '✏️ نام دلخواه کاربر',
+    NamingMethod.USER_CUSTOM_RANDOM: '🎲 نام دلخواه + رندوم',
+    NamingMethod.ADMIN_TEXT_RANDOM: '👤 متن ادمین + رندوم',
+    NamingMethod.ADMIN_TEXT_SEQUENTIAL: '📊 متن ادمین + ترتیبی',
+    NamingMethod.ID_SEQUENTIAL: '🔗 آیدی + ترتیبی',
+    NamingMethod.RESELLER_SEQUENTIAL: '💼 متن نماینده + ترتیبی',
+}
+
+
+class UsernameGenerator:
+    """
+    Advanced username generation system with 8 different methods
+    Based on mirza_pro implementation
+    """
+    
+    def __init__(self, db=None):
+        self.db = db
+        self._sequence_counter = {}
+    
+    def set_database(self, db):
+        """Set database instance"""
+        self.db = db
+    
+    def generate(self, method: NamingMethod, telegram_id: int, username: str = None,
+                 first_name: str = None, custom_name: str = None,
+                 admin_prefix: str = None, reseller_prefix: str = None,
+                 panel_id: int = None) -> str:
+        """
+        Generate username based on selected method
+        
+        Args:
+            method: NamingMethod enum
+            telegram_id: User's Telegram ID
+            username: Telegram username
+            first_name: User's first name
+            custom_name: Custom name provided by user (for USER_CUSTOM methods)
+            admin_prefix: Admin-defined prefix text
+            reseller_prefix: Reseller-defined prefix text
+            panel_id: Panel ID for sequence tracking
+            
+        Returns:
+            Generated username string
+        """
+        if method == NamingMethod.USERNAME_SEQUENTIAL:
+            return self._username_sequential(username, first_name, telegram_id, panel_id)
+        
+        elif method == NamingMethod.ID_RANDOM:
+            return self._id_random(telegram_id)
+        
+        elif method == NamingMethod.USER_CUSTOM:
+            return self._user_custom(custom_name, telegram_id)
+        
+        elif method == NamingMethod.USER_CUSTOM_RANDOM:
+            return self._user_custom_random(custom_name, telegram_id)
+        
+        elif method == NamingMethod.ADMIN_TEXT_RANDOM:
+            return self._admin_text_random(admin_prefix, telegram_id)
+        
+        elif method == NamingMethod.ADMIN_TEXT_SEQUENTIAL:
+            return self._admin_text_sequential(admin_prefix, panel_id)
+        
+        elif method == NamingMethod.ID_SEQUENTIAL:
+            return self._id_sequential(telegram_id, panel_id)
+        
+        elif method == NamingMethod.RESELLER_SEQUENTIAL:
+            return self._reseller_sequential(reseller_prefix, panel_id)
+        
+        else:
+            # Fallback to random
+            return self._id_random(telegram_id)
+    
+    def _username_sequential(self, username: str, first_name: str, 
+                             telegram_id: int, panel_id: int = None) -> str:
+        """Method 1: Username + Sequential number"""
+        base = self._clean_name(username or first_name or 'user')[:8]
+        seq = self._get_next_sequence(f"user_{panel_id or 0}")
+        return f"{base}{seq}"
+    
+    def _id_random(self, telegram_id: int) -> str:
+        """Method 2: ID + Random string"""
+        id_short = str(telegram_id)[-4:]
+        random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        return f"{id_short}{random_part}"
+    
+    def _user_custom(self, custom_name: str, telegram_id: int) -> str:
+        """Method 3: User custom name (cleaned)"""
+        if not custom_name:
+            return self._id_random(telegram_id)
+        
+        clean = self._clean_name(custom_name)[:12]
+        # Add short id if name is too short
+        if len(clean) < 4:
+            clean += str(telegram_id)[-4:]
+        return clean
+    
+    def _user_custom_random(self, custom_name: str, telegram_id: int) -> str:
+        """Method 4: User custom name + Random"""
+        if not custom_name:
+            return self._id_random(telegram_id)
+        
+        clean = self._clean_name(custom_name)[:6]
+        random_part = ''.join(random.choices(string.digits, k=4))
+        return f"{clean}{random_part}"
+    
+    def _admin_text_random(self, admin_prefix: str, telegram_id: int) -> str:
+        """Method 5: Admin text + Random"""
+        prefix = self._clean_name(admin_prefix or 'VIP')[:4]
+        random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        return f"{prefix}{random_part}"
+    
+    def _admin_text_sequential(self, admin_prefix: str, panel_id: int = None) -> str:
+        """Method 6: Admin text + Sequential"""
+        prefix = self._clean_name(admin_prefix or 'VIP')[:4]
+        seq = self._get_next_sequence(f"admin_{panel_id or 0}")
+        return f"{prefix}{seq:04d}"
+    
+    def _id_sequential(self, telegram_id: int, panel_id: int = None) -> str:
+        """Method 7: Telegram ID + Sequential"""
+        id_short = str(telegram_id)[-4:]
+        seq = self._get_next_sequence(f"id_{panel_id or 0}")
+        return f"{id_short}{seq:04d}"
+    
+    def _reseller_sequential(self, reseller_prefix: str, panel_id: int = None) -> str:
+        """Method 8: Reseller prefix + Sequential"""
+        prefix = self._clean_name(reseller_prefix or 'RS')[:3]
+        seq = self._get_next_sequence(f"reseller_{panel_id or 0}")
+        return f"{prefix}{seq:05d}"
+    
+    def _clean_name(self, name: str) -> str:
+        """Clean name for username (only alphanumeric)"""
+        if not name:
+            return ""
+        # Remove all non-alphanumeric characters
+        clean = re.sub(r'[^a-zA-Z0-9]', '', name)
+        return clean.upper() if clean else ""
+    
+    def _get_next_sequence(self, key: str) -> int:
+        """Get next sequence number for a key"""
+        if not self.db:
+            # In-memory fallback
+            if key not in self._sequence_counter:
+                self._sequence_counter[key] = 0
+            self._sequence_counter[key] += 1
+            return self._sequence_counter[key]
+        
+        try:
+            # Use database settings for persistence
+            setting_key = f"username_seq_{key}"
+            current = self.db.get_setting(setting_key, 0)
+            next_val = int(current) + 1
+            self.db.set_setting(setting_key, str(next_val))
+            return next_val
+        except Exception:
+            # Fallback to in-memory
+            if key not in self._sequence_counter:
+                self._sequence_counter[key] = 0
+            self._sequence_counter[key] += 1
+            return self._sequence_counter[key]
+    
+    @staticmethod
+    def get_method_name(method: NamingMethod) -> str:
+        """Get Persian name for a naming method"""
+        return NAMING_METHOD_NAMES.get(method, 'نامشخص')
+    
+    @staticmethod
+    def get_all_methods() -> list:
+        """Get list of all naming methods"""
+        return list(NamingMethod)
+    
+    @staticmethod
+    def method_from_value(value: int) -> NamingMethod:
+        """Convert integer to NamingMethod"""
+        try:
+            return NamingMethod(value)
+        except ValueError:
+            return NamingMethod.ID_RANDOM
+
+
+# Global instance
+username_generator = UsernameGenerator()
+

@@ -1121,3 +1121,80 @@ class MarzbanPanelManager:
         except Exception as e:
             print(f"Error getting all clients from Marzban: {e}")
             return []
+
+    def test_connection(self) -> Dict:
+        """Test connection to panel"""
+        start_time = time.time()
+        success = self.login()
+        latency = (time.time() - start_time) * 1000
+        
+        if success:
+            return {
+                'success': True,
+                'latency': int(latency),
+                'message': '✅ اتصال برقرار است'
+            }
+        else:
+            return {
+                'success': False,
+                'latency': 0,
+                'message': '❌ خطا در اتصال'
+            }
+
+    def get_system_stats(self) -> Dict:
+        """Get system stats (CPU, RAM)"""
+        if not self.login():
+            return {}
+            
+        try:
+            # Marzban API for system stats
+            response = self.session.get(
+                f"{self.base_url}/api/system",
+                verify=False,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    'cpu': data.get('cpu_usage', 0),
+                    'ram': data.get('memory_usage', 0),
+                    'uptime': data.get('uptime', 0),
+                    'version': data.get('version', 'Unknown')
+                }
+            return {}
+        except Exception as e:
+            print(f"Error getting system stats: {e}")
+            return {}
+
+    def get_users(self) -> List[Dict]:
+        """Get all users for sync"""
+        if not self.login():
+            return []
+            
+        try:
+            response = self.session.get(
+                f"{self.base_url}/api/users",
+                verify=False,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                users_list = data.get('users', []) if isinstance(data, dict) else data
+                
+                users = []
+                for user in users_list:
+                    users.append({
+                        'username': user.get('username'),
+                        'uuid': user.get('username'), # Marzban uses username as ID
+                        'total_gb': user.get('data_limit', 0),
+                        'expiry_time': user.get('expire', 0),
+                        'enable': user.get('status') == 'active',
+                        'inbound_id': 0 # Not applicable
+                    })
+                return users
+            return []
+        except Exception as e:
+            print(f"Error getting users: {e}")
+            return []

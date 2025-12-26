@@ -20,31 +20,38 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
-class DatabaseBackupSystem:
+class DatabaseBackupManager:
     """Automated database backup system"""
     
-    def __init__(self, bot: Bot, bot_config: Dict, db_config: Dict):
+    def __init__(self, db_manager, bot: Bot = None, bot_config: Dict = None):
         """
-        Initialize Database Backup System
+        Initialize Database Backup Manager
         
         Args:
-            bot: Telegram Bot instance
-            bot_config: Bot configuration dict (must contain 'reports_channel_id')
-            db_config: Database configuration dict (must contain connection details)
+            db_manager: ProfessionalDatabaseManager instance
+            bot: Telegram Bot instance (optional, for auto-backups)
+            bot_config: Bot configuration dict (optional)
         """
+        self.db_config = db_manager.db_config
         self.bot = bot
-        self.bot_config = bot_config
-        self.db_config = db_config
-        self.channel_id = bot_config.get('reports_channel_id')
-        self.bot_username = bot_config.get('bot_username', 'Unknown')
-        self.bot_name = bot_config.get('bot_name', bot_config.get('bot_username', 'Unknown'))
+        self.bot_config = bot_config or {}
         
-        if not self.channel_id:
-            logger.error(f"❌ CRITICAL: No reports_channel_id found in bot_config for bot '{self.bot_name}'")
-            self.enabled = False
+        if bot and bot_config:
+            self.channel_id = bot_config.get('reports_channel_id')
+            self.bot_username = bot_config.get('bot_username', 'Unknown')
+            self.bot_name = bot_config.get('bot_name', bot_config.get('bot_username', 'Unknown'))
+            
+            if not self.channel_id:
+                logger.warning(f"⚠️ No reports_channel_id found in bot_config for bot '{self.bot_name}'")
+                self.enabled = False
+            else:
+                self.enabled = True
+                logger.info(f"✅ DatabaseBackupManager initialized for bot '{self.bot_name}' with channel ID: {self.channel_id}")
         else:
-            self.enabled = True
-            logger.info(f"✅ DatabaseBackupSystem initialized for bot '{self.bot_name}' with channel ID: {self.channel_id}")
+            self.enabled = True # Enabled for manual usage
+            self.bot_name = "Manual Backup"
+            self.bot_username = "Unknown"
+            self.channel_id = None
     
     def _find_mysqldump(self) -> Optional[str]:
         """Find mysqldump executable path"""

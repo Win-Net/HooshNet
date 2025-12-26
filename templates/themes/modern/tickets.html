@@ -1,0 +1,79 @@
+{% extends "themes/modern/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div class="header-content">
+        <h1 class="page-title">پشتیبانی</h1>
+        <p class="page-subtitle">لیست تیکت‌های ارسال شده</p>
+    </div>
+    <div class="header-actions">
+        <a href="{{ url_for('new_ticket') }}" class="btn btn-primary ripple">
+            <i class="fas fa-plus"></i>
+            تیکت جدید
+        </a>
+    </div>
+</div>
+
+<div class="tickets-container">
+    {% if tickets %}
+    <div class="tickets-grid">
+        {% for ticket in tickets %}
+        <a href="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" class="ticket-card glass-card ripple">
+            <div class="ticket-status-line {{ ticket.status }}"></div>
+            <div class="ticket-content">
+                <div class="ticket-header">
+                    <div class="ticket-id">#{{ ticket.id }}</div>
+                    <span class="status-badge {{ ticket.status }}">
+                        {% if ticket.status == 'open' %}
+                        <i class="fas fa-envelope-open"></i> باز
+                        {% elif ticket.status == 'closed' %}
+                        <i class="fas fa-check-circle"></i> بسته شده
+                        {% elif ticket.status == 'answered' %}
+                        <i class="fas fa-reply"></i> پاسخ داده شده
+                        {% elif ticket.status == 'pending' %}
+                        <i class="fas fa-clock"></i> در انتظار
+                        {% else %}
+                        {{ ticket.status }}
+                        {% endif %}
+                    </span>
+                </div>
+                <h3 class="ticket-subject">{{ ticket.subject }}</h3>
+                <div class="ticket-meta">
+                    <span class="ticket-date">
+                        <i class="far fa-clock"></i>
+                        {{ ticket.updated_at|replace('T', ' ')|truncate(16, True, '') }}
+                    </span>
+                    {% if ticket.priority %}
+                    <span class="priority-badge {{ ticket.priority }}">
+                        {% if ticket.priority == 'high' %}
+                        <i class="fas fa-exclamation-circle"></i> بالا
+                        {% elif ticket.priority == 'medium' or ticket.priority == 'normal' %}
+                        <i class="fas fa-info-circle"></i> معمولی
+                        {% elif ticket.priority == 'low' %}
+                        <i class="fas fa-arrow-down"></i> پایین
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="ticket-arrow">
+                <i class="fas fa-chevron-left"></i>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state glass-card">
+        <div class="empty-icon">
+            <i class="fas fa-headset"></i>
+        </div>
+        <h3>تیکتی یافت نشد</h3>
+        <p>شما هنوز هیچ تیکت پشتیبانی ارسال نکرده‌اید</p>
+        <a href="{{ url_for('new_ticket') }}" class="btn btn-primary ripple">
+            <i class="fas fa-plus"></i>
+            ارسال تیکت جدید
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

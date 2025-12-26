@@ -5,6 +5,7 @@ Acts as a factory to return the appropriate panel manager instance
 """
 
 import logging
+import json
 from typing import Dict, List, Optional, Tuple, Union
 from professional_database import ProfessionalDatabaseManager
 from panel_manager import PanelManager
@@ -12,6 +13,7 @@ from marzban_manager import MarzbanPanelManager
 from rebecca_manager import RebeccaPanelManager
 from pasargad_manager import PasargadPanelManager
 from marzneshin_manager import MarzneshinPanelManager
+from guard_manager import GuardPanelManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class AdminManager:
     def __init__(self, db: ProfessionalDatabaseManager):
         self.db = db
         
-    def get_panel_manager(self, panel_id: int) -> Optional[Union[PanelManager, MarzbanPanelManager, RebeccaPanelManager, PasargadPanelManager, MarzneshinPanelManager]]:
+    def get_panel_manager(self, panel_id: int) -> Optional[Union[PanelManager, MarzbanPanelManager, RebeccaPanelManager, PasargadPanelManager, MarzneshinPanelManager, GuardPanelManager]]:
         """
         Factory method to get the appropriate panel manager based on panel type
         """
@@ -42,6 +44,8 @@ class AdminManager:
                 manager = PasargadPanelManager()
             elif panel_type == 'marzneshin':
                 manager = MarzneshinPanelManager()
+            elif panel_type == 'guard':
+                manager = GuardPanelManager()
             else:
                 # Default to 3x-ui
                 manager = PanelManager()
@@ -180,7 +184,7 @@ class AdminManager:
                 return False, "Login failed", None
             
             # Determine panel type and handle accordingly
-            if isinstance(manager, (MarzbanPanelManager, RebeccaPanelManager, MarzneshinPanelManager)):
+            if isinstance(manager, (MarzbanPanelManager, RebeccaPanelManager, MarzneshinPanelManager, GuardPanelManager)):
                 # For Rebecca/Marzban/Marzneshin, we should use the Main Service (default_inbound_id)
                 # Fetch panel details to get default_inbound_id
                 panel = self.db.get_panel(panel_id)
@@ -196,10 +200,13 @@ class AdminManager:
                     expire_days=expire_days,
                     total_gb=total_gb
                 )
-                if client:
+                
+                if client and not client.get('error'):
                     # Add extra info for consistency
                     client['created_on_inbounds'] = 1 # Simplified
                     return True, "Client created successfully", client
+                elif client and client.get('error'):
+                    return False, client.get('error'), None
                 else:
                     return False, "Failed to create client on panel", None
             
@@ -453,6 +460,8 @@ class AdminManager:
                 manager = PasargadPanelManager()
             elif panel_type == 'marzneshin':
                 manager = MarzneshinPanelManager()
+            elif panel_type == 'guard':
+                manager = GuardPanelManager()
             else:
                 manager = PanelManager()
                 
@@ -518,6 +527,8 @@ class AdminManager:
                     manager = PasargadPanelManager()
                 elif test_type == 'marzneshin':
                     manager = MarzneshinPanelManager()
+                elif test_type == 'guard':
+                    manager = GuardPanelManager()
                 else:
                     manager = PanelManager()
                     
@@ -587,6 +598,8 @@ class AdminManager:
                 manager = PasargadPanelManager()
             elif panel_type == 'marzneshin':
                 manager = MarzneshinPanelManager()
+            elif panel_type == 'guard':
+                manager = GuardPanelManager()
             else:
                 # Default to 3x-ui
                 manager = PanelManager()

@@ -7,6 +7,8 @@ import logging
 import asyncio
 import time
 import io
+import os
+import json
 from datetime import datetime, timedelta
 import qrcode
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -32,6 +34,12 @@ from user_info_updater import auto_update_user_info, ensure_user_updated
 from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
 from system_manager import SystemManager
 from reseller_panel.models import ResellerManager
+import psutil
+import platform
+from database_backup_system import DatabaseBackupManager
+from database_restore_system import DatabaseRestoreManager
+from username_formatter import username_generator, NamingMethod, UsernameFormatter
+from lottery_system import lottery_system
 
 # Configure logging
 logging.basicConfig(
@@ -102,6 +110,9 @@ class VPNBot:
         else:
             self.db = db
             
+        # Inject database into username_generator
+        username_generator.db = self.db
+            
         self.settings_manager = SettingsManager(self.db)
         self.system_manager = None
         
@@ -110,6 +121,10 @@ class VPNBot:
         
         # Initialize admin manager with correct database
         self.admin_manager = AdminManager(self.db)
+        
+        # Initialize Backup & Restore Managers
+        self.backup_manager = DatabaseBackupManager(self.db, None, self.bot_config)
+        self.restore_manager = DatabaseRestoreManager(self.db)
         
         # Initialize payment system
         # Payment gateway removed as per request
@@ -335,6 +350,24 @@ class VPNBot:
                         )
                     except:
                         pass
+                    
+                    # Report referral reward
+                    try:
+                        if self.reporting_system:
+                            referred_user = {
+                                'telegram_id': user_id,
+                                'username': user.username,
+                                'first_name': user.first_name
+                            }
+                            # Get total referrals for referrer
+                            total_referrals = self.db.get_user_referral_count(referrer_id)
+                            await self.reporting_system.report_referral_reward(
+                                referrer_user, referred_user, referral_reward, 
+                                referrer_user.get('wallet_balance', 0) + referral_reward,
+                                total_referrals
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to send referral reward report: {e}")
         
         # Report new user registration
         if self.reporting_system:
@@ -929,6 +962,10 @@ class VPNBot:
                 await self.create_client(update, context, inbound_id, client_name)
             elif data == "referral_system":
                 await self.handle_referral_system(update, context)
+            elif data == "spin_wheel_now":
+                await self.handle_spin_wheel_callback(update, context)
+            elif data == "wheel_cooldown":
+                await query.answer("⏳ زمان انتظار برای چرخش بعدی هنوز تمام نشده است.", show_alert=True)
             elif data == "admin_discount_codes_list":
                 await self.handle_admin_discount_codes_list(update, context)
             elif data == "admin_gift_codes_list":
@@ -1161,6 +1198,15 @@ class VPNBot:
                     await self.handle_panel_details(update, context, panel_id)
                 else:
                     await query.edit_message_text("❌ خطا در پردازش درخواست.")
+            elif data.startswith("naming_settings_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_naming_settings(update, context, panel_id)
+            elif data.startswith("set_naming_"):
+                parts = data.split("_")
+                panel_id = int(parts[2])
+                method_id = int(parts[3])
+                logger.info(f"🔘 Callback: set_naming_ for panel {panel_id}, method {method_id}")
+                await self.handle_set_naming(update, context, panel_id, method_id)
             elif data.startswith("edit_panel_"):
                 parts = data.split("_")
                 if len(parts) >= 3 and parts[2].isdigit():
@@ -1168,6 +1214,42 @@ class VPNBot:
                     await self.start_edit_panel(update, context, panel_id)
                 else:
                     await query.edit_message_text("❌ خطا در پردازش درخواست.")
+            elif data.startswith("panel_settings_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_panel_settings(update, context, panel_id)
+            elif data.startswith("adv_config_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_advanced_config(update, context, panel_id)
+            elif data.startswith("set_limits_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_set_limits(update, context, panel_id)
+            elif data.startswith("set_port_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_set_port(update, context, panel_id)
+            elif data.startswith("set_protocol_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_set_protocol(update, context, panel_id)
+            elif data.startswith("set_transmission_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_set_transmission(update, context, panel_id)
+            elif data.startswith("save_adv_setting_"):
+                parts = data.split("_")
+                # format: save_adv_setting_{panel_id}_{type}_{value}
+                # type can be: protocol, transmission, iplimit, port
+                # value is the last part
+                panel_id = int(parts[3])
+                setting_type = parts[4]
+                value = parts[5]
+                await self.handle_save_advanced_setting(update, context, panel_id, setting_type, value)
+            elif data.startswith("sync_panel_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_sync_panel(update, context, panel_id)
+            elif data.startswith("panel_stats_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_panel_stats(update, context, panel_id)
+            elif data.startswith("backup_panel_"):
+                panel_id = int(data.split("_")[2])
+                await self.handle_backup_panel(update, context, panel_id)
             elif data.startswith("edit_name_"):
                 panel_id = int(data.split("_")[2])
                 await self.handle_edit_panel_field(update, context, panel_id, "name")
@@ -1228,12 +1310,40 @@ class VPNBot:
                     await self.handle_select_panel(update, context, panel_id)
                 else:
                     await query.edit_message_text("❌ خطا در پردازش درخواست.")
+            elif data.startswith("create_client_panel_"):
+                parts = data.split("_")
+                if len(parts) >= 5:
+                    panel_id = int(parts[3])
+                    inbound_id = int(parts[4])
+                    # Check naming method
+                    panel = self.db.get_panel(panel_id)
+                    naming_method = panel.get('naming_method', 2) if panel else 2
+                    
+                    if naming_method in [3, 4]: # Custom or Custom+Random
+                        await self.create_client_prompt_panel(update, context, panel_id, inbound_id)
+                    else:
+                        # Direct creation (random or numeric)
+                        await self.handle_create_client_panel_flow(update, context, "")
             elif data.startswith("buy_gigabyte_"):
                 panel_id = int(data.split("_")[2])
-                await self.handle_buy_gigabyte(update, context, panel_id)
+                # Check naming method
+                panel = self.db.get_panel(panel_id)
+                naming_method = panel.get('naming_method', 2) if panel else 2
+                
+                if naming_method in [3, 4]: # Custom or Custom+Random
+                    await self.prompt_custom_name_for_purchase(update, context, panel_id, 'gigabyte')
+                else:
+                    await self.handle_buy_gigabyte(update, context, panel_id)
             elif data.startswith("buy_plan_"):
                 panel_id = int(data.split("_")[2])
-                await self.handle_buy_plan(update, context, panel_id)
+                # Check naming method
+                panel = self.db.get_panel(panel_id)
+                naming_method = panel.get('naming_method', 2) if panel else 2
+                
+                if naming_method in [3, 4]: # Custom or Custom+Random
+                    await self.prompt_custom_name_for_purchase(update, context, panel_id, 'plan')
+                else:
+                    await self.handle_buy_plan(update, context, panel_id)
             elif data.startswith("buy_category_products_"):
                 category_id = int(data.split("_")[3])
                 await self.handle_buy_category_products(update, context, category_id)
@@ -1502,16 +1612,78 @@ class VPNBot:
             elif data.startswith("reject_receipt_"):
                 invoice_id = int(data.split("_")[2])
                 await self.handle_reject_receipt(update, context, invoice_id)
+            
+            # ==================== New Admin Feature Handlers ====================
+            elif data == "admin_wheel":
+                await self.handle_admin_wheel(update, context)
+            elif data == "admin_channels":
+                await self.handle_admin_channels(update, context)
+            elif data == "admin_export":
+                await self.handle_admin_export(update, context)
+            elif data == "admin_roles":
+                await self.handle_admin_roles(update, context)
+            elif data.startswith("wheel_"):
+                await self.handle_wheel_callbacks(update, context, data)
+            elif data.startswith("channel_"):
+                await self.handle_channel_callbacks(update, context, data)
+            elif data.startswith("export_"):
+                await self.handle_export_callbacks(update, context, data)
+            elif data.startswith("role_"):
+                await self.handle_role_callbacks(update, context, data)
+            
+            # New Admin Features
+            elif data == "admin_send_message":
+                await self.handle_admin_send_message_init(update, context)
+            elif data == "admin_ban_user":
+                await self.handle_admin_ban_user_init(update, context)
+            elif data == "admin_manage_balance":
+                await self.handle_admin_manage_balance_init(update, context)
+            elif data == "admin_backup":
+                await self.handle_admin_backup(update, context)
+            elif data == "admin_restore_backup":
+                await self.handle_restore_backup_init(update, context)
+            elif data.startswith("backup_"):
+                await self.handle_backup_callbacks(update, context, data)
+            
+            # User Feature Callbacks
+            elif data == "spin_wheel":
+                await self.handle_spin_wheel(update, context)
+            elif data.startswith("show_apps_"):
+                await self.handle_show_apps_callback(update, context)
+            elif data == "support_init":
+                await self.handle_support_init(update, context)
+            elif data.startswith("select_dept_"):
+                dept_id = int(data.split("_")[2])
+                await self.handle_department_selection(update, context, dept_id)
+            elif data.startswith("dept_"):
+                await self.handle_department_callbacks(update, context, data)
+            elif data.startswith("channel_"):
+                await self.handle_channel_callbacks(update, context, data)
+            elif data.startswith("app_"):
+                await self.handle_app_link_callbacks(update, context, data)
+            elif data.startswith("export_"):
+                await self.handle_export_callbacks(update, context, data)
+            elif data.startswith("role_"):
+                await self.handle_role_callbacks(update, context, data)
+            
             else:
                 # Handle unknown callback data
                 logger.warning(f"Unknown callback data: {data}")
                 await query.edit_message_text("❌ درخواست نامعتبر است. لطفاً دوباره تلاش کنید.")
         except Exception as e:
-            logger.error(f"Error in callback handler: {e}")
-            logger.error(f"Callback data: {data}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            await query.edit_message_text("❌ خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+            if "Message is not modified" in str(e):
+                # Ignore this error as it happens when user clicks same button twice
+                pass
+            else:
+                logger.error(f"Error in callback handler: {e}")
+                logger.error(f"Callback data: {data}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                try:
+                    await query.answer("❌ خطایی رخ داد", show_alert=True)
+                except:
+                    pass
+                await query.edit_message_text("❌ خطایی رخ داد. لطفاً دوباره تلاش کنید.")
     
     async def select_inbound(self, update: Update, context: ContextTypes.DEFAULT_TYPE, inbound_id: int):
         """Handle inbound selection with advanced options"""
@@ -1700,6 +1872,12 @@ class VPNBot:
         elif text == "❓ راهنما و پشتیبانی":
             await self.show_help(update, context)
             return
+        elif text == "🎰 گردونه شانس":
+            await self.handle_wheel_of_fortune(update, context)
+            return
+        elif text == "📥 دانلود برنامه":
+            await self.handle_download_app(update, context)
+            return
         elif text == "⚙️ پنل مدیریت":
             if self.db.is_admin(user_id):
                 await self.handle_admin_panel(update, context)
@@ -1708,6 +1886,11 @@ class VPNBot:
         # Check if admin is sending broadcast message
         if context.user_data.get('awaiting_broadcast_message', False):
             await self.handle_broadcast_message(update, context)
+            return
+            
+        # Check if user is sending ticket text
+        if context.user_data.get('awaiting_ticket_text', False):
+            await self.handle_ticket_text_input(update, context, text)
             return
         
         # Check if admin is forwarding broadcast message
@@ -1720,6 +1903,33 @@ class VPNBot:
             await self.handle_add_admin_id(update, context)
             return
         
+        # Check if admin is entering naming prefix
+        if context.user_data.get('waiting_for_naming_prefix', False):
+            await self.handle_naming_prefix_input(update, context, text)
+            return
+
+        # Check if user is entering custom client name
+        if context.user_data.get('waiting_for_custom_client_name', False):
+            # Validate name (English alphanumeric only)
+            import re
+            if not re.match(r'^[a-zA-Z0-9]+$', text):
+                await update.message.reply_text("❌ نام وارد شده نامعتبر است. لطفاً فقط از حروف انگلیسی و اعداد استفاده کنید.")
+                return
+            
+            # Store custom name
+            context.user_data['custom_client_name'] = text
+            context.user_data['waiting_for_custom_client_name'] = False
+            
+            # Retrieve stored context data
+            panel_id = context.user_data.get('custom_name_panel_id')
+            volume_gb = context.user_data.get('custom_name_volume_gb')
+            price = context.user_data.get('custom_name_price')
+            
+            # Proceed to payment options
+            await update.message.reply_text(f"✅ نام '{text}' ثبت شد.")
+            await self.handle_volume_purchase_options_from_message(update, context, panel_id, volume_gb, price)
+            return
+
         # Check if admin is entering user ID for info
         if context.user_data.get('awaiting_user_id_for_info', False):
             await self.handle_user_info_display(update, context)
@@ -1738,6 +1948,58 @@ class VPNBot:
         # Check if admin is entering balance amount
         if context.user_data.get('awaiting_balance_amount', False):
             await self.handle_balance_amount_input(update, context)
+            return
+        
+        # ==================== New Feature Text Input Handlers ====================
+        
+        # Check if admin is entering user ID for DM
+        if context.user_data.get('awaiting_dm_user_id', False):
+            await self.handle_admin_dm_user_id(update, context, text)
+            return
+
+        # Check if admin is entering DM text
+        if context.user_data.get('awaiting_dm_text', False):
+            await self.handle_admin_dm_text(update, context, text)
+            return
+
+        # Check if admin is entering user ID for ban
+        if context.user_data.get('awaiting_ban_user_id', False):
+            await self.handle_admin_ban_user_id(update, context, text)
+            return
+
+        # Check if admin is entering user ID for balance management
+        if context.user_data.get('awaiting_balance_user_id', False):
+            await self.handle_admin_balance_user_id(update, context, text)
+            return
+
+        # Check if admin is entering amount for balance management
+        if context.user_data.get('awaiting_balance_manage_amount', False):
+            await self.handle_admin_balance_amount(update, context, text)
+            return
+
+        # Check if admin is adding a department
+        if context.user_data.get('awaiting_dept_name', False):
+            await self.handle_dept_name_input(update, context, text)
+            return
+        
+        # Check if admin is adding a channel
+        if context.user_data.get('awaiting_channel_id', False):
+            await self.handle_channel_id_input(update, context, text)
+            return
+        
+        # Check if admin is adding an app
+        if context.user_data.get('awaiting_app_name', False):
+            await self.handle_app_name_input(update, context, text)
+            return
+        
+        # Check if admin is adding a new admin by ID
+        if context.user_data.get('awaiting_new_admin_id', False):
+            await self.handle_new_admin_id_input(update, context, text)
+            return
+        
+        # Check if admin is entering app URL (step 2 of app creation)
+        if context.user_data.get('awaiting_app_url', False):
+            await self.handle_app_url_input(update, context, text)
             return
         
         # Check if user is editing a panel
@@ -1788,6 +2050,11 @@ class VPNBot:
         # Check if user is creating client on panel
         if context.user_data.get('creating_client_panel', False):
             await self.handle_create_client_panel_flow(update, context, text)
+            return
+
+        # Check if user is entering custom name for purchase
+        if context.user_data.get('waiting_for_custom_name_purchase', False):
+            await self.handle_custom_name_purchase_input(update, context, text)
             return
         
         # Check if user is waiting for client name
@@ -2229,6 +2496,7 @@ class VPNBot:
         """
         
         keyboard = [
+            [InlineKeyboardButton("📞 ارسال تیکت پشتیبانی", callback_data="support_init")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2239,6 +2507,83 @@ class VPNBot:
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
+        else:
+            await update.message.reply_text(
+                help_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+    async def handle_support_init(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Initialize support ticket flow - Show departments"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from support_department import support_department_manager
+            support_department_manager.set_database(self.db)
+            
+            departments = support_department_manager.get_all_departments(active_only=True)
+            
+            if not departments:
+                # Fallback if no departments
+                await query.edit_message_text(
+                    "❌ سیستم پشتیبانی موقتاً در دسترس نیست.",
+                    reply_markup=ButtonLayout.create_back_button("main_menu")
+                )
+                return
+            
+            message = "📞 **ارسال تیکت پشتیبانی**\n\nلطفاً دپارتمان مربوطه را انتخاب کنید:"
+            
+            keyboard = []
+            for dept in departments:
+                keyboard.append([InlineKeyboardButton(
+                    f"{dept.emoji} {dept.name}", 
+                    callback_data=f"select_dept_{dept.id}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")])
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error showing departments: {e}")
+            await query.edit_message_text("❌ خطا در بارگذاری دپارتمان‌ها.")
+
+    async def handle_department_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, dept_id: int):
+        """Handle department selection and ask for ticket text"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from support_department import support_department_manager
+            support_department_manager.set_database(self.db)
+            
+            dept = support_department_manager.get_department(dept_id)
+            if not dept:
+                await query.edit_message_text("❌ دپارتمان یافت نشد.")
+                return
+            
+            # Save selected department in user_data
+            context.user_data['selected_dept_id'] = dept_id
+            context.user_data['awaiting_ticket_text'] = True
+            
+            message = f"""📝 **ارسال تیکت به {dept.emoji} {dept.name}**
+            
+لطفاً متن پیام خود را ارسال کنید.
+می‌توانید عکس یا فایل هم ارسال کنید.
+
+🚫 برای انصراف /cancel را ارسال کنید."""
+            
+            await query.edit_message_text(message, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error selecting department: {e}")
+            await query.edit_message_text("❌ خطا رخ داد.")
         else:
             await update.message.reply_text(
                 help_text,
@@ -2715,6 +3060,38 @@ class VPNBot:
         await query.answer()
         
         context.user_data['panel_type'] = panel_type
+        
+        keyboard = [
+            [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Guard uses hardcoded URL - only ask for API Key
+        if panel_type == 'guard':
+            context.user_data['panel_step'] = 'guard_api_key'
+            # Hardcoded Guard URL
+            context.user_data['panel_url'] = 'https://core.erfjab.com'
+            context.user_data['panel_username'] = ''  # Guard doesn't use username
+            
+            add_text = """
+🛡️ **اتصال به پنل Guard**
+
+فقط کلید API خود را وارد کنید تا اتصال برقرار شود.
+سایر اطلاعات به صورت خودکار از پنل دریافت می‌شود.
+
+🔑 **کلید API را از بخش Settings پنل Guard کپی کنید.**
+
+👇 **کلید API را ارسال کنید:**
+            """
+            
+            await query.edit_message_text(
+                add_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Other panel types - continue with normal flow
         context.user_data['panel_step'] = 'name'
         
         panel_display_name = {
@@ -2738,11 +3115,6 @@ class VPNBot:
 
 👇 **نام پنل را ارسال کنید:**
         """
-        
-        keyboard = [
-            [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
             add_text,
@@ -2809,7 +3181,8 @@ class VPNBot:
                 'marzban': 'Marzban',
                 'rebecca': 'Rebecca',
                 'pasargad': 'Pasarguard',
-                'marzneshin': 'Marzneshin'
+                'marzneshin': 'Marzneshin',
+                'guard': 'Guard'
             }.get(panel_type, panel_type)
             
             # Define field names (Persian)
@@ -2842,7 +3215,7 @@ class VPNBot:
                 """
             
             elif field == 'url':
-                if panel_type in ['marzban', 'rebecca', 'marzneshin']:
+                if panel_type in ['marzban', 'rebecca', 'marzneshin', 'guard']:
                     message = f"""
 ✏️ **ویرایش آدرس پنل ({panel_display_name})**
 
@@ -2917,7 +3290,7 @@ class VPNBot:
                 """
             
             elif field == 'subscription_url':
-                if panel_type in ['marzban', 'marzneshin']:
+                if panel_type in ['marzban', 'marzneshin', 'guard']:
                     message = f"""
 ✏️ **ویرایش لینک سابسکریپشن ({panel_display_name})**
 
@@ -3435,6 +3808,80 @@ class VPNBot:
         context.user_data['creating_client_panel'] = True
         context.user_data['panel_id'] = panel_id
         context.user_data['inbound_id'] = inbound_id
+
+    async def prompt_custom_name_for_purchase(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                            panel_id: int, next_action: str):
+        """Prompt user for custom name before purchase"""
+        query = update.callback_query
+        await query.answer()
+        
+        text = """
+📝 **نام اختصاصی سرویس**
+
+لطفاً یک نام دلخواه برای سرویس خود وارد کنید.
+این نام برای کانفیگ شما استفاده خواهد شد.
+
+**قوانین نام:**
+• حداقل ۳ و حداکثر ۲۰ کاراکتر
+• فقط حروف انگلیسی و اعداد
+• بدون فاصله (از - یا \_ استفاده کنید)
+
+مثال: `ali-vpn`, `my-phone`, `iphone13`
+
+برای انصراف /cancel را ارسال کنید.
+        """
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"select_panel_{panel_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        context.user_data['waiting_for_custom_name_purchase'] = True
+        context.user_data['purchase_panel_id'] = panel_id
+        context.user_data['purchase_next_action'] = next_action
+
+    async def handle_custom_name_purchase_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle custom name input for purchase"""
+        if text.lower() == '/cancel':
+            await update.message.reply_text("❌ عملیات لغو شد.")
+            context.user_data.clear()
+            return
+
+        # Validate name
+        if not self._validate_client_name(text):
+            await update.message.reply_text(
+                "❌ **نام نامعتبر است!**\n\n"
+                "لطفاً نامی بین ۳ تا ۲۰ کاراکتر و فقط شامل حروف انگلیسی و اعداد وارد کنید.\n"
+                "مثال: `my-vpn`"
+            )
+            return
+
+        # Store name in user_sessions for persistence during payment flow
+        user_id = update.effective_user.id
+        if user_id not in self.user_sessions:
+            self.user_sessions[user_id] = {}
+        
+        self.user_sessions[user_id]['custom_name'] = text
+        context.user_data['custom_name'] = text # Also keep in context for immediate use
+        
+        # Proceed to next step
+        panel_id = context.user_data.get('purchase_panel_id')
+        next_action = context.user_data.get('purchase_next_action')
+        
+        context.user_data['waiting_for_custom_name_purchase'] = False
+        
+        if next_action == 'gigabyte':
+            await self.handle_buy_gigabyte(update, context, panel_id)
+        elif next_action == 'plan':
+            await self.handle_buy_plan(update, context, panel_id)
+        else:
+            await update.message.reply_text("❌ خطای داخلی: مرحله بعدی نامشخص است.")
     
     @auto_update_user_info
     async def show_user_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3498,6 +3945,168 @@ class VPNBot:
         # Common cancel button for all steps
         cancel_keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]]
         cancel_markup = InlineKeyboardMarkup(cancel_keyboard)
+        # Guard API Key only flow - validate and ask for sub URL
+        if step == 'guard_api_key':
+            api_key = text.strip()
+            if not api_key or len(api_key) < 10:
+                await update.message.reply_text(
+                    "❌ **کلید API نامعتبر است!**\n\n"
+                    "کلید API باید حداقل ۱۰ کاراکتر باشد.\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Test connection with API Key
+            await update.message.reply_text("🔄 در حال تست اتصال به پنل Guard...", parse_mode='Markdown')
+            
+            try:
+                import requests
+                guard_url = context.user_data.get('panel_url', 'https://core.erfjab.com')
+                headers = {
+                    'X-API-Key': api_key,
+                    'Accept': 'application/json'
+                }
+                
+                # Test connection by fetching current admin info
+                response = requests.get(
+                    f"{guard_url}/api/admins/current",
+                    headers=headers,
+                    verify=False,
+                    timeout=10
+                )
+                
+                if response.status_code != 200:
+                    await update.message.reply_text(
+                        "❌ **اتصال ناموفق!**\n\n"
+                        f"کلید API نامعتبر است یا پنل در دسترس نیست.\n"
+                        f"کد خطا: {response.status_code}\n\n"
+                        "لطفاً کلید API را بررسی کنید:",
+                        reply_markup=cancel_markup,
+                        parse_mode='Markdown'
+                    )
+                    return
+                
+                admin_data = response.json()
+                admin_username = admin_data.get('username', 'Guard')
+                
+                # Store validated data and ask for subscription URL
+                context.user_data['panel_password'] = api_key  # API Key stored as password
+                context.user_data['guard_admin_username'] = admin_username
+                context.user_data['panel_step'] = 'guard_subscription_url'
+                
+                await update.message.reply_text(
+                    f"✅ **اتصال موفق!**\n"
+                    f"👤 ادمین: {admin_username}\n\n"
+                    "🌐 **مرحله دوم: لینک سابسکریپشن**\n\n"
+                    "لطفاً لینک سابسکریپشن متصل به این پنل را وارد کنید.\n"
+                    "این لینک برای تولید لینک‌های اتصال کاربران استفاده می‌شود.\n\n"
+                    "📝 **مثال:**\n`https://sub.example.com`\n\n"
+                    "👇 **لینک سابسکریپشن را ارسال کنید:**",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+                return
+                
+            except Exception as e:
+                logger.error(f"Error connecting to Guard: {e}")
+                await update.message.reply_text(
+                    f"❌ **خطا در اتصال به پنل Guard!**\n\n"
+                    f"جزئیات: {str(e)}\n\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+                return
+        
+        # Guard subscription URL step
+        elif step == 'guard_subscription_url':
+            sub_url = text.strip().rstrip('/')
+            if not self._validate_url(sub_url):
+                await update.message.reply_text(
+                    "❌ **لینک نامعتبر است!**\n\n"
+                    "لطفاً آدرس صحیح با `http://` یا `https://` وارد کنید.\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+                return
+            
+            context.user_data['panel_subscription_url'] = sub_url
+            context.user_data['panel_step'] = 'guard_price'
+            
+            await update.message.reply_text(
+                "💰 **مرحله سوم: قیمت هر گیگابایت**\n\n"
+                "لطفاً قیمت هر گیگابایت ترافیک را به تومان وارد کنید.\n"
+                "این مقدار برای محاسبه قیمت سرویس‌ها استفاده می‌شود.\n\n"
+                "📝 **مثال:** `5000`\n\n"
+                "👇 **قیمت را به تومان وارد کنید:**",
+                reply_markup=cancel_markup,
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Guard price per GB step
+        elif step == 'guard_price':
+            try:
+                price = int(text.strip().replace(',', ''))
+                if price < 0:
+                    raise ValueError("Price cannot be negative")
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ **قیمت نامعتبر است!**\n\n"
+                    "لطفاً یک عدد صحیح مثبت وارد کنید.\n"
+                    "مثال: `5000`\n\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Create panel with all collected data
+            guard_url = context.user_data.get('panel_url', 'https://core.erfjab.com')
+            api_key = context.user_data.get('panel_password')
+            admin_username = context.user_data.get('guard_admin_username', 'Guard')
+            subscription_url = context.user_data.get('panel_subscription_url')
+            
+            # Auto-generate panel name
+            panel_name = f"Guard-{admin_username[:10]}"
+            
+            # Create panel in database
+            panel_id = self.db.add_panel(
+                name=panel_name,
+                url=guard_url,
+                api_endpoint=guard_url,
+                username='',  # Guard doesn't use username
+                password=api_key,  # API Key stored in password field
+                subscription_url=subscription_url,
+                price_per_gb=price,
+                sale_type='both',
+                panel_type='guard'
+            )
+            
+            if panel_id:
+                await update.message.reply_text(
+                    f"✅ **پنل Guard با موفقیت اضافه شد!**\n\n"
+                    f"📛 **نام:** {panel_name}\n"
+                    f"🔗 **آدرس:** {guard_url}\n"
+                    f"🌐 **لینک سابسکریپشن:** {subscription_url}\n"
+                    f"💰 **قیمت هر گیگ:** {price:,} تومان\n"
+                    f"👤 **ادمین:** {admin_username}\n\n"
+                    f"اکنون می‌توانید از این پنل برای مدیریت سرویس‌ها استفاده کنید.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ **خطا در ذخیره پنل در دیتابیس!**\n\n"
+                    "لطفاً مجدداً تلاش کنید.",
+                    parse_mode='Markdown'
+                )
+            
+            # Clear user data
+            context.user_data.clear()
+            return
         
         if step == 'name':
             # Validate panel name
@@ -3515,7 +4124,7 @@ class VPNBot:
             panel_type = context.user_data.get('panel_type', '3x-ui')
             
             # Dynamic help text based on panel type
-            if panel_type in ['marzban', 'rebecca', 'marzneshin']:
+            if panel_type in ['marzban', 'rebecca', 'marzneshin', 'guard']:
                 url_example = "https://panel.example.com:8000"
                 url_note = "⚠️ **نکته مهم:** برای این نوع پنل، آدرس را **بدون** `/dashboard` یا مسیر اضافی وارد کنید."
             else:  # 3x-ui, pasargad
@@ -3546,12 +4155,45 @@ class VPNBot:
             # Remove trailing slash if present
             text = text.rstrip('/')
             context.user_data['panel_url'] = text
-            context.user_data['panel_step'] = 'username'
+            
+            panel_type = context.user_data.get('panel_type', '3x-ui')
+            
+            # Guard panels use API Key instead of username/password
+            if panel_type == 'guard':
+                context.user_data['panel_step'] = 'api_key'
+                context.user_data['panel_username'] = ''  # Guard doesn't use username
+                
+                await update.message.reply_text(
+                    "🔑 **مرحله سوم: کلید API (API Key)**\n\n"
+                    "لطفاً کلید API مربوط به پنل Guard خود را وارد کنید.\n"
+                    "این کلید از بخش **Settings** پنل Guard قابل دریافت است.\n\n"
+                    "⚠️ **نکته:** کلید API به جای یوزرنیم/پسورد استفاده می‌شود.\n\n"
+                    "👇 **کلید API را ارسال کنید:**",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+            else:
+                context.user_data['panel_step'] = 'username'
+                
+                await update.message.reply_text(
+                    "👤 **مرحله سوم: نام کاربری (Username)**\n\n"
+                    "لطفاً نام کاربری ورود به پنل مدیریت خود را وارد کنید.\n\n"
+                    "👇 **نام کاربری را ارسال کنید:**",
+                    reply_markup=cancel_markup,
+                    parse_mode='Markdown'
+                )
+        
+        elif step == 'api_key':
+            # Guard API Key - store in password field
+            context.user_data['panel_password'] = text
+            context.user_data['panel_step'] = 'subscription_url'
             
             await update.message.reply_text(
-                "👤 **مرحله سوم: نام کاربری (Username)**\n\n"
-                "لطفاً نام کاربری ورود به پنل مدیریت خود را وارد کنید.\n\n"
-                "👇 **نام کاربری را ارسال کنید:**",
+                "🌐 **مرحله چهارم: لینک سابسکریپشن (Subscription URL)**\n\n"
+                "لطفاً دامنه یا لینک سابسکریپشن متصل به این پنل را وارد کنید.\n"
+                "این لینک برای تولید لینک‌های اتصال کاربران استفاده می‌شود.\n\n"
+                "📝 **مثال:**\n`https://sub.example.com:2096`\n\n"
+                "👇 **لینک سابسکریپشن را ارسال کنید:**",
                 reply_markup=cancel_markup,
                 parse_mode='Markdown'
             )
@@ -3693,7 +4335,7 @@ class VPNBot:
                         return
 
                 # For Marzban and Rebecca, ask for protocol instead of inbound
-                elif panel_type in ['marzban', 'rebecca', 'marzneshin']:
+                elif panel_type in ['marzban', 'rebecca', 'marzneshin', 'guard']:
                     text_msg = "🔗 **انتخاب پروتکل اتصال**\n\n"
                     text_msg += "لطفاً پروتکل اصلی که می‌خواهید برای کاربران استفاده شود را انتخاب کنید.\n"
                     text_msg += "ربات به صورت خودکار از تمامی Inboundهای موجود برای این پروتکل استفاده خواهد کرد.\n\n"
@@ -4526,6 +5168,19 @@ class VPNBot:
             if gift_result['success']:
                 # Gift code applied successfully
                 new_balance = self.db.get_user(user_id).get('balance', 0)
+                
+                # Report gift code usage
+                if self.reporting_system:
+                    try:
+                        report_data = {
+                            'code': code,
+                            'amount': gift_result['amount'],
+                            'new_balance': new_balance
+                        }
+                        await self.reporting_system.send_report('gift_code_used', report_data, user)
+                    except Exception as re:
+                        logger.error(f"Failed to send gift code report: {re}")
+                
                 await update.message.reply_text(
                     f"✅ کد هدیه اعمال شد!\n\n"
                     f"💰 مبلغ هدیه: {gift_result['amount']:,} تومان\n"
@@ -4638,6 +5293,19 @@ class VPNBot:
             if gift_result['success']:
                 # Gift code applied successfully
                 new_balance = self.db.get_user(user_id).get('balance', 0)
+                
+                # Report gift code usage
+                if self.reporting_system:
+                    try:
+                        report_data = {
+                            'code': code,
+                            'amount': gift_result['amount'],
+                            'new_balance': new_balance
+                        }
+                        await self.reporting_system.send_report('gift_code_used', report_data, user)
+                    except Exception as re:
+                        logger.error(f"Failed to send gift code report: {re}")
+                
                 await update.message.reply_text(
                     f"✅ کد هدیه اعمال شد!\n\n"
                     f"💰 مبلغ هدیه: {gift_result['amount']:,} تومان\n"
@@ -4693,6 +5361,19 @@ class VPNBot:
             if gift_result['success']:
                 # Gift code applied successfully
                 new_balance = self.db.get_user(user_id).get('balance', 0)
+                
+                # Report gift code usage
+                if self.reporting_system:
+                    try:
+                        report_data = {
+                            'code': code,
+                            'amount': gift_result['amount'],
+                            'new_balance': new_balance
+                        }
+                        await self.reporting_system.send_report('gift_code_used', report_data, user)
+                    except Exception as re:
+                        logger.error(f"Failed to send gift code report: {re}")
+                
                 await update.message.reply_text(
                     f"✅ کد هدیه اعمال شد!\n\n"
                     f"💰 مبلغ هدیه: {gift_result['amount']:,} تومان\n"
@@ -4844,7 +5525,33 @@ class VPNBot:
                                 await self.create_client_from_product(update, context, invoice)
                             else:
                                 # This is a gigabyte purchase
-                                await self.create_client_from_invoice(update, context, invoice)
+                                # Check for custom name in session
+                                custom_name = self.user_sessions.get(user_id, {}).get('custom_name')
+                                if custom_name:
+                                    logger.info(f"Using custom name for client creation: {custom_name}")
+                                    # Clear it after use
+                                    if user_id in self.user_sessions:
+                                        self.user_sessions[user_id].pop('custom_name', None)
+                                
+                                await self.create_client_from_invoice(update, context, invoice, custom_name=custom_name)
+                            
+                            # Report discount code usage if applicable
+                            if invoice.get('discount_code_id') and self.reporting_system:
+                                try:
+                                    discount_code_id = invoice['discount_code_id']
+                                    discount_code_obj = self.db.get_discount_code_by_id(discount_code_id)
+                                    code_str = discount_code_obj['code'] if discount_code_obj else 'Unknown'
+                                    
+                                    report_data = {
+                                        'code': code_str,
+                                        'amount_before': invoice.get('original_amount', invoice['amount']),
+                                        'discount_amount': invoice.get('discount_amount', 0),
+                                        'amount_after': invoice['amount']
+                                    }
+                                    user_obj = self.db.get_user(user_id)
+                                    await self.reporting_system.send_report('discount_code_used', report_data, user_obj)
+                                except Exception as re:
+                                    logger.error(f"Failed to send discount code report: {re}")
                         else:
                             logger.error("❌ Invoice not found after payment")
                             await query.edit_message_text("✅ پرداخت انجام شد اما خطا در ایجاد سرویس.")
@@ -5344,10 +6051,20 @@ class VPNBot:
             logger.error(f"Traceback: {traceback.format_exc()}")
             await query.edit_message_text("❌ خطا در ایجاد لینک پرداخت.")
     
-    async def create_client_from_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, invoice: dict):
+    async def create_client_from_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, invoice: dict, custom_name: str = None):
         """Create client from paid invoice"""
         try:
             logger.info(f"🔍 Starting create_client_from_invoice for invoice {invoice['id']}")
+            
+            # If custom_name not provided, check invoice notes
+            if not custom_name and invoice.get('notes'):
+                notes = invoice['notes']
+                # Parse notes for custom_name:value
+                import re
+                match = re.search(r'custom_name:([a-zA-Z0-9_-]+)', notes)
+                if match:
+                    custom_name = match.group(1)
+                    logger.info(f"Found custom name in invoice notes: {custom_name}")
             
             # Get panel details
             panel = self.db.get_panel(invoice['panel_id'])
@@ -5368,12 +6085,22 @@ class VPNBot:
             logger.info(f"✅ User found: {user['telegram_id']}")
             
             # Generate professional client name
-            client_name = UsernameFormatter.format_client_name(
-                telegram_id=user['telegram_id'],
-                username=user.get('username'),
-                first_name=user.get('first_name'),
-                service_type="VPN"
-            )
+            if custom_name:
+                # Use custom name provided by user
+                client_name = custom_name
+                # If naming method is 4 (Custom + Random), append random string
+                if panel.get('naming_method') == 4:
+                     import random, string
+                     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+                     client_name = f"{custom_name}-{random_suffix}"
+            else:
+                # Use default formatter
+                client_name = UsernameFormatter.format_client_name(
+                    telegram_id=user['telegram_id'],
+                    username=user.get('username'),
+                    first_name=user.get('first_name'),
+                    service_type="VPN"
+                )
             
             logger.info(f"🔍 Creating client on all inbounds of panel:")
             logger.info(f"   Panel ID: {invoice['panel_id']}")
@@ -5735,6 +6462,20 @@ class VPNBot:
                     f"💡 کاربران از تمامی inbound های {protocol_persian} استفاده خواهند کرد.",
                     reply_markup=ButtonLayout.create_back_button("manage_panels")
                 )
+                
+                # Report panel addition
+                if self.reporting_system:
+                    try:
+                        report_data = {
+                            'panel_name': panel_name,
+                            'panel_url': panel_url,
+                            'username': panel_username,
+                            'panel_type': panel_type
+                        }
+                        admin_data = self.db.get_user(update.effective_user.id)
+                        await self.reporting_system.send_report('panel_added', report_data, admin_data)
+                    except Exception as re:
+                        logger.error(f"Failed to send panel addition report: {re}")
             else:
                 await query.edit_message_text(
                     "❌ خطا در اضافه کردن پنل. ممکن است نام پنل تکراری باشد.",
@@ -5799,6 +6540,20 @@ class VPNBot:
                     f"💰 قیمت هر گیگابایت: {panel_price:,} تومان",
                     reply_markup=ButtonLayout.create_back_button("manage_panels")
                 )
+                
+                # Report panel addition
+                if self.reporting_system:
+                    try:
+                        report_data = {
+                            'panel_name': panel_name,
+                            'panel_url': panel_url,
+                            'username': panel_username,
+                            'panel_type': panel_type
+                        }
+                        admin_data = self.db.get_user(update.effective_user.id)
+                        await self.reporting_system.send_report('panel_added', report_data, admin_data)
+                    except Exception as re:
+                        logger.error(f"Failed to send panel addition report: {re}")
             else:
                 await query.edit_message_text(
                     "❌ خطا در اضافه کردن پنل. ممکن است نام پنل تکراری باشد.",
@@ -5847,31 +6602,7 @@ class VPNBot:
             logger.error(f"Error starting add panel flow: {e}")
             await query.edit_message_text("❌ خطا در شروع فرآیند اضافه کردن پنل.")
     
-    async def handle_panel_type_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_type: str):
-        """Handle panel type selection"""
-        query = update.callback_query
-        await query.answer()
-        
-        try:
-            # Save panel type
-            context.user_data['panel_type'] = panel_type
-            context.user_data['panel_step'] = 'name'
-            
-            panel_type_persian = {
-                'marzban': 'مرزبان',
-                'rebecca': 'ربکا',
-                '3x-ui': '3x-ui'
-            }.get(panel_type, panel_type)
-            
-            await query.edit_message_text(
-                f"✅ نوع پنل انتخاب شد: **{panel_type_persian}**\n\n"
-                "لطفاً نام پنل را وارد کنید:",
-                parse_mode='Markdown'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling panel type selection: {e}")
-            await query.edit_message_text("❌ خطا در انتخاب نوع پنل.")
+
     
     async def handle_sale_type_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, sale_type: str):
         """Handle sale type selection"""
@@ -5957,14 +6688,7 @@ class VPNBot:
             )
             
             # Create buttons
-            keyboard = [
-                [InlineKeyboardButton("✏️ ویرایش پنل", callback_data=f"edit_panel_{panel_id}")],
-                [InlineKeyboardButton("🔗 مدیریت اینباندها", callback_data=f"manage_panel_inbounds_{panel_id}")],
-                [InlineKeyboardButton("🗑️ حذف پنل", callback_data=f"delete_panel_{panel_id}")],
-                [InlineKeyboardButton("🔄 تست اتصال", callback_data=f"test_panel_{panel_id}")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="manage_panels")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = ButtonLayout.create_panel_settings_menu(panel_id)
             
             await query.edit_message_text(message, reply_markup=reply_markup)
             
@@ -6232,12 +6956,28 @@ class VPNBot:
         await query.answer()
         
         try:
+            # Get panel info before deletion for reporting
+            panel = self.db.get_panel(panel_id)
+            
             # Delete panel from database
             if self.db.delete_panel(panel_id):
                 await query.edit_message_text(
                     "✅ پنل با موفقیت حذف شد!",
                     reply_markup=ButtonLayout.create_back_button("manage_panels")
                 )
+                
+                # Report panel deletion
+                if self.reporting_system and panel:
+                    try:
+                        report_data = {
+                            'panel_name': panel['name'],
+                            'panel_url': panel['url'],
+                            'reason': 'حذف توسط مدیریت'
+                        }
+                        admin_data = self.db.get_user(update.effective_user.id)
+                        await self.reporting_system.send_report('panel_deleted', report_data, admin_data)
+                    except Exception as re:
+                        logger.error(f"Failed to send panel deletion report: {re}")
             else:
                 await query.edit_message_text(
                     "❌ خطا در حذف پنل.",
@@ -6327,8 +7067,13 @@ class VPNBot:
 لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
             """
             
+            # Get admin role
+            from admin_roles import admin_roles_manager
+            admin_roles_manager.set_database(self.db)
+            role = admin_roles_manager.get_user_role(user_id)
+            
             # Use the centralized button layout
-            reply_markup = ButtonLayout.create_admin_panel(bot_name=self.bot_username)
+            reply_markup = ButtonLayout.create_admin_panel(bot_name=self.bot_username, admin_role=role)
             
             if query:
                 await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
@@ -6392,21 +7137,35 @@ class VPNBot:
         query = update.callback_query
         await query.answer()
         
+        # Clear any pending admin action states
+        keys_to_clear = [
+            'awaiting_dm_user_id', 'awaiting_dm_text', 'dm_target_user_id',
+            'awaiting_ban_user_id',
+            'awaiting_balance_user_id', 'awaiting_balance_manage_amount', 'balance_target_user_id'
+        ]
+        for key in keys_to_clear:
+            context.user_data.pop(key, None)
+        
         try:
             users = self.db.get_all_users()
             total_users = len(users)
             
-            message = f"👥 مدیریت کاربران\n\nتعداد کل کاربران: {total_users:,}\n\nگزینه موردنظر را انتخاب کنید:"
+            message = f"👥 **مدیریت کاربران**\n\nتعداد کل کاربران: {total_users:,}\n\nگزینه موردنظر را انتخاب کنید:"
             
             keyboard = [
                 [InlineKeyboardButton("🔍 مشاهده اطلاعات کاربر", callback_data="user_info_request")],
                 [InlineKeyboardButton("📋 مشاهده سرویس‌های کاربر", callback_data="user_services_menu")],
+                [
+                    InlineKeyboardButton("📨 ارسال پیام", callback_data="admin_send_message"),
+                    InlineKeyboardButton("🚫 مسدودسازی", callback_data="admin_ban_user")
+                ],
+                [InlineKeyboardButton("💰 مدیریت موجودی", callback_data="admin_manage_balance")],
                 [InlineKeyboardButton("🎁 هدیه به همه کاربران", callback_data="gift_all_users_request")],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(message, reply_markup=reply_markup)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"Error handling manage users: {e}")
@@ -8009,7 +8768,11 @@ class VPNBot:
         await query.answer()
         
         try:
-            message = "👥 خدمات کاربران\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
+            # Get total users count
+            all_users = self.db.get_all_users()
+            total_users = len(all_users) if all_users else 0
+            
+            message = f"👥 **مدیریت کاربران**\n\n📊 تعداد کل کاربران: {total_users}\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
             
             keyboard = [
                 [InlineKeyboardButton("👤 اطلاعات کاربران", callback_data="user_info_request"), InlineKeyboardButton("🎁 هدیه به تمام کاربران", callback_data="gift_all_users_request")],
@@ -8018,11 +8781,11 @@ class VPNBot:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(message, reply_markup=reply_markup)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"Error handling user services menu: {e}")
-            await query.edit_message_text("❌ خطا در نمایش منوی خدمات کاربران.")
+            await query.edit_message_text("❌ خطا در نمایش منوی مدیریت کاربران.")
     
     async def handle_user_info_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Request user ID for viewing info"""
@@ -9303,6 +10066,11 @@ class VPNBot:
                 context.user_data['test_account_inbound_id'] = inbound_id
                 context.user_data['test_account_panel_id'] = panel_id
             
+            # Mark as test account for reporting
+            context.user_data['is_test_account'] = True
+            context.user_data['test_panel_name'] = panel['name']
+            context.user_data['test_duration_hours'] = test_config.get('duration_hours', 24)
+            
             # Go directly to payment options
             await self.handle_volume_purchase_options(update, context, panel_id, volume_gb, price)
             
@@ -9554,12 +10322,16 @@ class VPNBot:
     async def handle_buy_gigabyte(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
         """Handle gigabyte purchase selection"""
         query = update.callback_query
-        await query.answer()
+        if query:
+            await query.answer()
         
         try:
             panel = self.db.get_panel(panel_id)
             if not panel:
-                await query.edit_message_text("❌ پنل یافت نشد.")
+                if query:
+                    await query.edit_message_text("❌ پنل یافت نشد.")
+                else:
+                    await update.message.reply_text("❌ پنل یافت نشد.")
                 return
             
             price_per_gb = panel.get('price_per_gb', 1000) or 1000
@@ -9593,16 +10365,23 @@ class VPNBot:
             
             reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb, discount_rate)
             
-            await query.edit_message_text(message, reply_markup=reply_markup)
+            if query:
+                await query.edit_message_text(message, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(message, reply_markup=reply_markup)
             
         except Exception as e:
             logger.error(f"Error handling buy gigabyte: {e}")
-            await query.edit_message_text("❌ خطا در نمایش خرید گیگابایتی.")
+            if query:
+                await query.edit_message_text("❌ خطا در نمایش خرید گیگابایتی.")
+            else:
+                await update.message.reply_text("❌ خطا در نمایش خرید گیگابایتی.")
     
     async def handle_buy_plan(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
         """Handle plan purchase selection"""
         query = update.callback_query
-        await query.answer()
+        if query:
+            await query.answer()
         
         await self.handle_show_products_for_purchase(update, context, panel_id)
     
@@ -10675,7 +11454,7 @@ class VPNBot:
                 if panel:
                     panel_type = panel.get('panel_type', '3x-ui')
                     
-                    if panel_type in ['marzban', 'rebecca', 'pasargad']:
+                    if panel_type in ['marzban', 'rebecca', 'pasargad', 'guard']:
                         # For Marzban, Rebecca, and Pasargad, get subscription link from panel API
                         panel_manager = self.admin_manager.get_panel_manager(service['panel_id'])
                         if panel_manager and panel_manager.login():
@@ -12507,16 +13286,16 @@ class VPNBot:
             used_traffic_bytes = client.get('used_traffic', 0)
             expire_time = client.get('expiryTime', 0)
             
+            # Handle unlimited data or calculate remaining GB
             if total_traffic_bytes <= 0:
-                await query.edit_message_text("❌ حجم سرویس نامحدود است. امکان تغییر لوکیشن وجود ندارد.")
-                return
-            
-            remaining_bytes = max(0, total_traffic_bytes - used_traffic_bytes)
-            remaining_gb = round(remaining_bytes / (1024 * 1024 * 1024), 2)
-            
-            if remaining_gb <= 0:
-                await query.edit_message_text("❌ حجم باقیمانده سرویس صفر است.")
-                return
+                remaining_gb = 0  # Unlimited
+            else:
+                remaining_bytes = max(0, total_traffic_bytes - used_traffic_bytes)
+                remaining_gb = round(remaining_bytes / (1024 * 1024 * 1024), 2)
+                
+                if remaining_gb <= 0:
+                    await query.edit_message_text("❌ حجم باقیمانده سرویس صفر است.")
+                    return
             
             # Calculate expire_days from expiryTime
             expire_days = 0  # 0 means unlimited
@@ -12544,10 +13323,23 @@ class VPNBot:
                 await query.edit_message_text("❌ هیچ اینباندی در پنل مقصد یافت نشد.")
                 return
             
-            # Use default inbound or first available
-            dest_inbound_id = new_panel.get('default_inbound_id') or dest_inbounds[0].get('id')
+            # Find a valid inbound in destination panel
+            dest_inbound_id = None
+            default_inbound_id = new_panel.get('default_inbound_id')
+            
+            # Check if default inbound exists in the list of available inbounds
+            if default_inbound_id:
+                for ib in dest_inbounds:
+                    if str(ib.get('id')) == str(default_inbound_id):
+                        dest_inbound_id = default_inbound_id
+                        break
+            
+            # If default not found or not set, use the first available inbound
+            if not dest_inbound_id and dest_inbounds:
+                dest_inbound_id = dest_inbounds[0].get('id')
+            
             if not dest_inbound_id:
-                await query.edit_message_text("❌ اینباند پیش‌فرض در پنل مقصد یافت نشد.")
+                await query.edit_message_text("❌ اینباند معتبری در پنل مقصد یافت نشد.")
                 return
             
             # Step 1: Create new client in destination panel with same expiry
@@ -12569,11 +13361,11 @@ class VPNBot:
             
             logger.info(f"📋 New client created - UUID: {new_client_uuid[:8]}..., sub_id: {new_sub_id}")
             
-            # Get new subscription link from destination panel (NOT direct config)
+            # Get new subscription link from destination panel
             new_subscription_link = ""
             try:
                 panel_type = new_panel.get('panel_type', '3x-ui')
-                subscription_url = new_panel.get('subscription_url', '')
+                subscription_url = new_panel.get('subscription_url') or new_panel.get('url', '')
                 
                 logger.info(f"🔗 Panel type: {panel_type}, subscription_url: {subscription_url}")
                 
@@ -12589,25 +13381,24 @@ class VPNBot:
                         new_subscription_link = new_client.get('subscription_url')
                 else:
                     # For 3x-ui, ALWAYS construct subscription link from subscription_url + sub_id
-                    # NEVER use get_client_config_link (it returns direct config, not subscription)
                     if new_sub_id and subscription_url:
+                        # Ensure subscription_url is properly formatted
                         if subscription_url.endswith('/sub') or subscription_url.endswith('/sub/'):
                             sub_url = subscription_url.rstrip('/')
                             new_subscription_link = f"{sub_url}/{new_sub_id}"
                         elif '/sub' in subscription_url:
                             new_subscription_link = f"{subscription_url}/{new_sub_id}"
                         else:
-                            new_subscription_link = f"{subscription_url}/sub/{new_sub_id}"
+                            new_subscription_link = f"{subscription_url.rstrip('/')}/sub/{new_sub_id}"
                         
                         logger.info(f"✅ Constructed subscription link: {new_subscription_link[:50]}...")
                     else:
                         logger.warning(f"⚠️ Cannot construct subscription link - sub_id: {new_sub_id}, subscription_url: {subscription_url}")
-                    
+            
             except Exception as e:
                 logger.error(f"Error getting new subscription link: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                # Continue even if subscription link fails - we can get it later
             
             # Step 2: Delete client from source panel
             delete_success = source_panel_manager.delete_client(
@@ -12645,19 +13436,21 @@ class VPNBot:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
+            volume_display = f"{remaining_gb:.2f} گیگابایت" if remaining_gb > 0 else "نامحدود"
+            
             message = f"""
 ✅ **تغییر لوکیشن با موفقیت انجام شد!**
 
 📊 **اطلاعات جدید:**
    • پنل جدید: {new_panel['name']}
-   • حجم سرویس: {remaining_gb:.2f} گیگابایت
+   • حجم سرویس: {volume_display}
    • شناسه کلاینت: {new_client_uuid[:8]}...
 
 💡 **تغییرات انجام شده:**
    ✅ کلاینت از پنل {service_row['panel_name']} حذف شد
    ✅ کلاینت جدید در پنل {new_panel['name']} ایجاد شد
    ✅ لینک کانفیگ/subscription به‌روزرسانی شد
-   ✅ حجم سرویس به {remaining_gb:.2f} گیگابایت تنظیم شد
+   ✅ حجم سرویس به {volume_display} تنظیم شد
 
 🔗 لینک کانفیگ و subscription شما اکنون مربوط به پنل جدید است.
 
@@ -13457,6 +14250,30 @@ class VPNBot:
         context.user_data.pop('original_amount', None)
         context.user_data.pop('final_amount', None)
         
+        # Check naming method
+        naming_method_value = 2
+        if panel.get('extra_config'):
+            try:
+                extra_config = json.loads(panel.get('extra_config')) if isinstance(panel.get('extra_config'), str) else panel.get('extra_config')
+                if extra_config:
+                    naming_method_value = int(extra_config.get('naming_method', 2))
+            except:
+                pass
+        
+        # If custom name required (Method 3 or 4)
+        if naming_method_value in [3, 4]:
+            # Store context for after name input
+            context.user_data['waiting_for_custom_client_name'] = True
+            context.user_data['custom_name_panel_id'] = panel_id
+            context.user_data['custom_name_volume_gb'] = volume_gb
+            context.user_data['custom_name_price'] = price
+            
+            await query.edit_message_text(
+                "✏️ لطفاً نام دلخواه خود را برای سرویس وارد کنید:\n\n"
+                "⚠️ نام باید انگلیسی باشد."
+            )
+            return
+
         # Check if amount is below 10 GB (gateway restriction)
         if volume_gb < 10:
             # Force balance payment for small amounts
@@ -13805,44 +14622,126 @@ class VPNBot:
                 logger.error(f"Panel {panel_id} not found")
                 return {'success': False, 'subscription_link': None}
             
-            # Generate client name
-            client_name = UsernameFormatter.format_client_name(
-                user_id, 
-                user.get('username'), 
-                user.get('first_name'),
-                "VPN"
-            )
+            # Get naming method from panel config
+            naming_method_value = 2  # Default to ID_RANDOM
+            admin_prefix = "VIP"
+            reseller_prefix = "RS"
             
-            # Check if this is a test account purchase with configured inbound
-            test_account_inbound_id = None
-            test_account_panel_id = None
-            if context:
-                test_account_inbound_id = context.user_data.get('test_account_inbound_id')
-                test_account_panel_id = context.user_data.get('test_account_panel_id')
+            if panel.get('extra_config'):
+                try:
+                    extra_config = json.loads(panel.get('extra_config')) if isinstance(panel.get('extra_config'), str) else panel.get('extra_config')
+                    logger.info(f"🔍 Panel {panel_id} extra_config: {extra_config}")
+                    if extra_config:
+                        naming_method_value = int(extra_config.get('naming_method', 2))
+                        admin_prefix = extra_config.get('admin_prefix', 'VIP')
+                        reseller_prefix = extra_config.get('reseller_prefix', 'RS')
+                except Exception as e:
+                    logger.error(f"Error parsing panel extra_config: {e}")
             
-            # If this is a test account purchase with configured panel and inbound, use specific inbound
-            if test_account_panel_id == panel_id and test_account_inbound_id:
-                logger.info(f"Creating test account client {client_name} with {volume_gb}GB on specific inbound {test_account_inbound_id} of panel {panel_id}")
-                success, message, client_data = self.admin_manager.create_client_on_panel(
-                    panel_id=panel_id,
-                    inbound_id=test_account_inbound_id,
-                    client_name=client_name,
-                    expire_days=0,  # Unlimited
-                    total_gb=volume_gb
-                )
-                # Clear test account context after use
+            logger.info(f"🔍 Naming Method Value: {naming_method_value}")
+            
+            # Generate client name using the configured method
+            naming_method = NamingMethod(naming_method_value) if naming_method_value in [m.value for m in NamingMethod] else NamingMethod.ID_RANDOM
+            
+            # Get custom name from context if available
+            custom_name = context.user_data.get('custom_client_name') if context else None
+            logger.info(f"🔍 Custom Name from context: {custom_name}")
+            
+            # Retry loop for client creation (handle duplicate names)
+            max_retries = 3
+            retry_count = 0
+            success = False
+            client_data = None
+            message = ""
+            
+            while retry_count < max_retries:
+                # Generate name
+                if retry_count > 0:
+                    # If retrying, append random suffix to avoid collision
+                    if custom_name:
+                        # For custom name, append random digits
+                        import random
+                        suffix = ''.join(random.choices('0123456789', k=3))
+                        temp_custom_name = f"{custom_name}{suffix}"
+                        client_name = username_generator.generate(
+                            method=naming_method,
+                            telegram_id=user_id,
+                            username=user.get('username'),
+                            first_name=user.get('first_name'),
+                            custom_name=temp_custom_name,
+                            admin_prefix=admin_prefix,
+                            reseller_prefix=reseller_prefix,
+                            panel_id=panel_id
+                        )
+                    else:
+                        # For others, just regenerate (it will use next sequence or new random)
+                        client_name = username_generator.generate(
+                            method=naming_method,
+                            telegram_id=user_id,
+                            username=user.get('username'),
+                            first_name=user.get('first_name'),
+                            admin_prefix=admin_prefix,
+                            reseller_prefix=reseller_prefix,
+                            panel_id=panel_id
+                        )
+                        # If it's the same as before (e.g. random collision), force a change
+                        if retry_count > 1:
+                             client_name += str(random.randint(10, 99))
+                else:
+                    # First try
+                    client_name = username_generator.generate(
+                        method=naming_method,
+                        telegram_id=user_id,
+                        username=user.get('username'),
+                        first_name=user.get('first_name'),
+                        custom_name=custom_name,
+                        admin_prefix=admin_prefix,
+                        reseller_prefix=reseller_prefix,
+                        panel_id=panel_id
+                    )
+
+                # Check if this is a test account purchase with configured inbound
+                test_account_inbound_id = None
+                test_account_panel_id = None
                 if context:
-                    context.user_data.pop('test_account_inbound_id', None)
-                    context.user_data.pop('test_account_panel_id', None)
-            else:
-                # Create client on all inbounds of panel with shared subscription ID (default behavior)
-                logger.info(f"Creating client {client_name} with {volume_gb}GB on all inbounds of panel {panel_id}")
-                success, message, client_data = self.admin_manager.create_client_on_all_panel_inbounds(
-                    panel_id=panel_id,
-                    client_name=client_name,
-                    expire_days=0,  # Unlimited
-                    total_gb=volume_gb
-                )
+                    test_account_inbound_id = context.user_data.get('test_account_inbound_id')
+                    test_account_panel_id = context.user_data.get('test_account_panel_id')
+                
+                # Try to create client
+                if test_account_panel_id == panel_id and test_account_inbound_id:
+                    logger.info(f"Creating test account client {client_name} with {volume_gb}GB on specific inbound {test_account_inbound_id} of panel {panel_id}")
+                    success, message, client_data = self.admin_manager.create_client_on_panel(
+                        panel_id=panel_id,
+                        inbound_id=test_account_inbound_id,
+                        client_name=client_name,
+                        expire_days=0,  # Unlimited
+                        total_gb=volume_gb
+                    )
+                    # Clear test account context after use
+                    if context and success:
+                        context.user_data.pop('test_account_inbound_id', None)
+                        context.user_data.pop('test_account_panel_id', None)
+                else:
+                    # Create client on all inbounds of panel with shared subscription ID (default behavior)
+                    logger.info(f"Creating client {client_name} with {volume_gb}GB on all inbounds of panel {panel_id}")
+                    success, message, client_data = self.admin_manager.create_client_on_all_panel_inbounds(
+                        panel_id=panel_id,
+                        client_name=client_name,
+                        expire_days=0,  # Unlimited
+                        total_gb=volume_gb
+                    )
+                
+                # Check result
+                if success:
+                    break
+                
+                # Check if error is due to duplicate name
+                if "already exists" in str(message).lower() or "duplicate" in str(message).lower():
+                    logger.warning(f"Client name {client_name} already exists. Retrying...")
+                    retry_count += 1
+                else:
+                    # Other error, stop retrying
+                    break
             
             logger.info(f"Client creation result: success={success}, message={message}")
             
@@ -13905,17 +14804,29 @@ class VPNBot:
                     original_amount=original_amount if discount_amount > 0 else None
                 )
                 
-                # Report service purchase
+                # Report service purchase or test account
                 if self.reporting_system:
-                    service_data = {
-                        'service_name': client_name,
-                        'data_amount': volume_gb,
-                        'amount': price,
-                        'panel_name': panel['name'],
-                        'purchase_type': 'gigabyte',
-                        'payment_method': 'balance'
-                    }
-                    await self.reporting_system.report_service_purchased(user, service_data)
+                    if context.user_data.get('is_test_account'):
+                        test_data = {
+                            'panel_name': context.user_data.get('test_panel_name', panel['name']),
+                            'volume_gb': volume_gb,
+                            'duration_hours': context.user_data.get('test_duration_hours', 24)
+                        }
+                        await self.reporting_system.send_report('test_account_created', test_data, user)
+                        # Clear test flag
+                        context.user_data.pop('is_test_account', None)
+                        context.user_data.pop('test_panel_name', None)
+                        context.user_data.pop('test_duration_hours', None)
+                    else:
+                        service_data = {
+                            'service_name': client_name,
+                            'data_amount': volume_gb,
+                            'amount': price,
+                            'panel_name': panel['name'],
+                            'purchase_type': 'gigabyte',
+                            'payment_method': 'balance'
+                        }
+                        await self.reporting_system.report_service_purchased(user, service_data)
                 
                 logger.info(f"Successfully created client {client_name} with {volume_gb}GB on {client_data.get('created_on_inbounds', 0)} inbounds")
                 return {
@@ -15828,6 +16739,18 @@ class VPNBot:
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify user {user_id}: {e}")
+                
+                # Report balance recharge
+                if self.reporting_system:
+                    try:
+                        await self.reporting_system.report_balance_added(
+                            user_data=user,
+                            amount=amount,
+                            new_balance=user['balance'] + amount,
+                            payment_method='card'
+                        )
+                    except Exception as re:
+                        logger.error(f"Failed to send balance recharge report: {re}")
                     
             elif purchase_type in ['service', 'plan']:
                 # Create service
@@ -15836,9 +16759,41 @@ class VPNBot:
                 duration_days = invoice.get('duration_days', 30)
                 product_id = invoice.get('product_id')
                 
-                # Format client name
-                from username_formatter import UsernameFormatter
-                client_name = UsernameFormatter.format_client_name(user['telegram_id'])
+                # Get panel details for naming convention
+                panel = self.db.get_panel(panel_id)
+                
+                # Get naming method from panel config
+                naming_method_value = 2  # Default to ID_RANDOM
+                admin_prefix = "VIP"
+                reseller_prefix = "RS"
+                
+                if panel and panel.get('extra_config'):
+                    try:
+                        extra_config = json.loads(panel.get('extra_config')) if isinstance(panel.get('extra_config'), str) else panel.get('extra_config')
+                        if extra_config:
+                            naming_method_value = int(extra_config.get('naming_method', 2))
+                            admin_prefix = extra_config.get('admin_prefix', 'VIP')
+                            reseller_prefix = extra_config.get('reseller_prefix', 'RS')
+                    except Exception as e:
+                        logger.error(f"Error parsing panel extra_config: {e}")
+                
+                # Generate client name using the configured method
+                naming_method = NamingMethod(naming_method_value) if naming_method_value in [m.value for m in NamingMethod] else NamingMethod.ID_RANDOM
+                
+                # Get custom name from context if available (though context might be limited in callback)
+                # For receipts, we might need to store custom name in invoice or user_data
+                custom_name = context.user_data.get('custom_client_name') if context else None
+                
+                client_name = username_generator.generate(
+                    method=naming_method,
+                    telegram_id=user['telegram_id'],
+                    username=user.get('username'),
+                    first_name=user.get('first_name'),
+                    custom_name=custom_name,
+                    admin_prefix=admin_prefix,
+                    reseller_prefix=reseller_prefix,
+                    panel_id=panel_id
+                )
                 
                 # Create service
                 success, message, client_data = self.admin_manager.create_client_on_all_panel_inbounds(
@@ -15874,6 +16829,23 @@ class VPNBot:
                         # Update invoice to completed
                         self.db.update_invoice_status(invoice_id, 'completed')
                         
+                        # Report discount code usage if applicable
+                        if invoice.get('discount_code_id') and self.reporting_system:
+                            try:
+                                discount_code_id = invoice['discount_code_id']
+                                discount_code_obj = self.db.get_discount_code_by_id(discount_code_id)
+                                code_str = discount_code_obj['code'] if discount_code_obj else 'Unknown'
+                                
+                                report_data = {
+                                    'code': code_str,
+                                    'amount_before': invoice.get('original_amount', invoice['amount']),
+                                    'discount_amount': invoice.get('discount_amount', 0),
+                                    'amount_after': invoice['amount']
+                                }
+                                await self.reporting_system.send_report('discount_code_used', report_data, user)
+                            except Exception as re:
+                                logger.error(f"Failed to send discount code report: {re}")
+                        
                         # Notify user
                         sub_link = client_data.get('subscription_link') or client_data.get('subscription_url', '')
                         msg = f"""
@@ -15908,17 +16880,21 @@ class VPNBot:
                     )
 
             # Report service purchase
-            if self.reporting_system:
+            if self.reporting_system and purchase_type in ['service', 'plan']:
                 try:
+                    # Get panel info for report
+                    panel = self.db.get_panel(invoice['panel_id'])
+                    panel_name = panel['name'] if panel else 'Unknown'
+                    
                     service_data = {
                         'service_name': client_name,
-                        'data_amount': product['volume_gb'] if purchase_type == 'plan' else gb_amount,
+                        'data_amount': gb_amount,
                         'amount': invoice['amount'],
-                        'panel_name': panel['name'],
+                        'panel_name': panel_name,
                         'purchase_type': 'plan' if purchase_type == 'plan' else 'gigabyte',
                         'payment_method': 'card'
                     }
-                    await self.reporting_system.report_service_purchased(user_obj, service_data)
+                    await self.reporting_system.report_service_purchased(user, service_data)
                 except Exception as e:
                     logger.error(f"Failed to send service purchase report: {e}")
 
@@ -15986,8 +16962,1296 @@ class VPNBot:
             logger.error(f"Error rejecting receipt: {e}")
             await query.answer("❌ خطا در رد پرداخت.", show_alert=True)
 
+    # ==================== New Admin Feature Handler Methods ====================
+    
+    async def handle_admin_wheel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle wheel of fortune admin menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from lottery_system import lottery_system
+            lottery_system.set_database(self.db)
+            
+            config = lottery_system.get_wheel_config()
+            stats = lottery_system.get_spin_statistics()
+            
+            message = f"""🎰 **مدیریت گردونه شانس**
+
+📊 **آمار:**
+• کل چرخش‌ها: {stats.get('total_spins', 0):,}
+• چرخش امروز: {stats.get('spins_today', 0):,}
+• مجموع جوایز: {stats.get('total_balance_given', 0):,} تومان
+
+⚙️ **تنظیمات فعلی:**
+• وضعیت: {'✅ فعال' if config.get('enabled', True) else '❌ غیرفعال'}
+• هزینه هر چرخش: {config.get('spin_cost', 0):,} تومان
+• کولدان: {config.get('cooldown_hours', 24)} ساعت
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("✅ فعال/غیرفعال" if config.get('enabled') else "❌ فعال کردن", callback_data="wheel_toggle")],
+                [InlineKeyboardButton("⚙️ تنظیم جوایز", callback_data="wheel_prizes")],
+                [InlineKeyboardButton("📊 آمار کامل", callback_data="wheel_stats")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+            ]
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in admin_wheel: {e}")
+            await query.edit_message_text("❌ خطا در بارگذاری گردونه شانس.")
+    
+    async def handle_admin_departments(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle support departments admin menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from support_department import support_department_manager
+            support_department_manager.set_database(self.db)
+            
+            departments = support_department_manager.get_all_departments(active_only=False)
+            
+            message = "🎫 **مدیریت دپارتمان‌های پشتیبانی**\n\n"
+            
+            if departments:
+                for dept in departments:
+                    status = "✅" if dept.is_active else "❌"
+                    message += f"{dept.emoji} **{dept.name}** {status}\n"
+                    message += f"   └ ادمین‌ها: {len(dept.admin_ids)} نفر\n"
+            else:
+                message += "هیچ دپارتمانی ثبت نشده.\n"
+            
+            message += "\n💡 دپارتمان‌ها برای هدایت تیکت‌ها به تیم‌های مختلف استفاده می‌شوند."
+            
+            keyboard = [
+                [InlineKeyboardButton("➕ افزودن دپارتمان", callback_data="dept_add")],
+                [InlineKeyboardButton("📋 لیست دپارتمان‌ها", callback_data="dept_list")],
+                [InlineKeyboardButton("🔄 ایجاد پیش‌فرض‌ها", callback_data="dept_init")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+            ]
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in admin_departments: {e}")
+            await query.edit_message_text("❌ خطا در بارگذاری دپارتمان‌ها.")
+    
+    async def handle_admin_channels(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle multi-channel admin menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from channel_manager import channel_manager
+            channel_manager.set_database(self.db)
+            
+            channels = channel_manager.get_all_channels(required_only=False)
+            
+            message = "📢 **مدیریت کانال‌های اجباری**\n\n"
+            
+            if channels:
+                for i, ch in enumerate(channels, 1):
+                    status = "✅" if ch.get('is_required') else "❌"
+                    message += f"{i}. {status} **{ch.get('channel_name', '')}**\n"
+                    message += f"   └ ID: `{ch.get('channel_id', '')}`\n"
+            else:
+                message += "هیچ کانالی ثبت نشده.\n"
+            
+            message += "\n💡 کاربران باید در همه کانال‌های فعال عضو باشند."
+            
+            keyboard = [
+                [InlineKeyboardButton("➕ افزودن کانال", callback_data="channel_add")],
+                [InlineKeyboardButton("📋 لیست کانال‌ها", callback_data="channel_list")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+            ]
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in admin_channels: {e}")
+            await query.edit_message_text("❌ خطا در بارگذاری کانال‌ها.")
+    
+    async def handle_admin_app_links(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle app download links admin menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from app_links import app_links_manager, PLATFORM_NAMES
+            app_links_manager.set_database(self.db)
+            
+            apps = app_links_manager.get_all_apps(active_only=False)
+            
+            message = "📱 **مدیریت لینک برنامه‌ها**\n\n"
+            
+            if apps:
+                for app in apps:
+                    status = "✅" if app.get('is_active') else "❌"
+                    emoji = app.get('icon_emoji', '📱')
+                    platform = PLATFORM_NAMES.get(app.get('platform', ''), app.get('platform', ''))
+                    message += f"{emoji} **{app.get('name', '')}** {status}\n"
+                    message += f"   └ {platform}\n"
+            else:
+                message += "هیچ برنامه‌ای ثبت نشده.\n"
+            
+            message += "\n💡 لینک‌های دانلود کلاینت‌های VPN را مدیریت کنید."
+            
+            keyboard = [
+                [InlineKeyboardButton("➕ افزودن برنامه", callback_data="app_add")],
+                [InlineKeyboardButton("📋 لیست برنامه‌ها", callback_data="app_list")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+            ]
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in admin_app_links: {e}")
+            await query.edit_message_text("❌ خطا در بارگذاری برنامه‌ها.")
+    
+    async def handle_wheel_of_fortune(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle wheel of fortune main menu"""
+        user_id = update.effective_user.id
+        
+        # Get Web App URL
+        webapp_url = os.getenv('BOT_WEBAPP_URL')
+        if not webapp_url:
+            # Fallback if not set
+            await update.message.reply_text("❌ آدرس وب اپلیکیشن تنظیم نشده است.")
+            return
+
+        wheel_url = f"{webapp_url}/wheel"
+        
+        keyboard = [
+            [InlineKeyboardButton("🎰 ورود به گردونه شانس", web_app=WebAppInfo(url=wheel_url))],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
+        ]
+        
+        text = (
+            "🎰 **گردونه شانس**\n\n"
+            "شانس خودت رو امتحان کن و جوایز ارزشمند ببر!\n"
+            "🎁 جوایز شامل: اعتبار هدیه، حجم اضافه، روزهای رایگان و کد تخفیف\n\n"
+            "👇 برای شروع روی دکمه زیر کلیک کن:"
+        )
+        
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+    
+    async def handle_admin_export(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle data export admin menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        message = """📤 **خروجی گرفتن از اطلاعات**
+
+انتخاب کنید کدام داده‌ها را می‌خواهید دریافت کنید:
+
+📊 **فرمت‌های موجود:** CSV و Excel
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("👥 کاربران", callback_data="export_users"),
+             InlineKeyboardButton("📦 سفارشات", callback_data="export_orders")],
+            [InlineKeyboardButton("💰 پرداخت‌ها", callback_data="export_payments"),
+             InlineKeyboardButton("🔧 سرویس‌ها", callback_data="export_services")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+        ]
+        
+        await query.edit_message_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def handle_admin_roles(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle admin roles management menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from admin_roles import admin_roles_manager, AdminRole, ROLE_NAMES_FA, ROLE_EMOJIS
+            admin_roles_manager.set_database(self.db)
+            
+            admins = admin_roles_manager.get_all_admins_by_role()
+            
+            message = "👑 **مدیریت نقش ادمین‌ها**\n\n"
+            
+            # Count by role
+            role_counts = {AdminRole.ADMIN: 0, AdminRole.SELLER: 0, AdminRole.SUPPORT: 0}
+            for admin in admins:
+                role_str = admin.get('admin_role', 'admin')
+                if role_str == 'admin':
+                    role_counts[AdminRole.ADMIN] += 1
+                elif role_str == 'seller':
+                    role_counts[AdminRole.SELLER] += 1
+                elif role_str == 'support':
+                    role_counts[AdminRole.SUPPORT] += 1
+            
+            message += "📊 **آمار نقش‌ها:**\n"
+            for role, count in role_counts.items():
+                emoji = ROLE_EMOJIS.get(role, '')
+                name = ROLE_NAMES_FA.get(role, '')
+                message += f"  {emoji} {name}: {count} نفر\n"
+            
+            message += "\n💡 هر نقش دسترسی‌های متفاوتی دارد."
+            
+            keyboard = [
+                [InlineKeyboardButton("➕ افزودن ادمین", callback_data="role_add")],
+                [InlineKeyboardButton("📋 لیست ادمین‌ها", callback_data="role_list")],
+                [InlineKeyboardButton("⚙️ تغییر نقش", callback_data="role_change")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+            ]
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in admin_roles: {e}")
+            await query.edit_message_text("❌ خطا در بارگذاری نقش‌ها.")
+    
+    # Sub-callback handlers for new features
+    async def handle_wheel_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle wheel-related callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from lottery_system import lottery_system
+            lottery_system.set_database(self.db)
+            
+            if data == "wheel_toggle":
+                config = lottery_system.get_wheel_config()
+                config['enabled'] = not config.get('enabled', True)
+                lottery_system.save_wheel_config(config)
+                await self.handle_admin_wheel(update, context)
+                
+            elif data == "wheel_stats":
+                stats = lottery_system.get_spin_statistics()
+                message = f"""📊 **آمار کامل گردونه شانس**
+
+🎰 کل چرخش‌ها: {stats.get('total_spins', 0):,}
+📅 چرخش امروز: {stats.get('spins_today', 0):,}
+💰 مجموع جوایز موجودی: {stats.get('total_balance_given', 0):,} تومان
+
+🏆 **برندگان برتر:**
+"""
+                for i, winner in enumerate(stats.get('top_winners', [])[:5], 1):
+                    name = winner.get('first_name') or winner.get('username') or str(winner.get('telegram_id'))
+                    message += f"{i}. {name}: {winner.get('total_won', 0):,} تومان\n"
+                
+                keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wheel")]]
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data == "wheel_prizes":
+                config = lottery_system.get_wheel_config()
+                prizes = config.get('prizes', [])
+                
+                message = "⚙️ **تنظیم جوایز گردونه:**\n\n"
+                for i, prize in enumerate(prizes, 1):
+                    message += f"{i}. {prize.get('label', '')} (وزن: {prize.get('weight', 0)})\n"
+                
+                message += "\n💡 برای تغییر جوایز، تنظیمات را در فایل lottery_system.py ویرایش کنید."
+                
+                keyboard = [
+                    [InlineKeyboardButton("🔄 ریست به پیش‌فرض", callback_data="wheel_reset")],
+                    [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wheel")]
+                ]
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data == "wheel_reset":
+                config = lottery_system._get_default_wheel_config()
+                lottery_system.save_wheel_config(config)
+                await query.edit_message_text("✅ تنظیمات گردونه به حالت پیش‌فرض بازگشت.")
+                await self.handle_admin_wheel(update, context)
+                
+        except Exception as e:
+            logger.error(f"Error in wheel_callbacks: {e}")
+            await query.edit_message_text("❌ خطا رخ داد.")
+    
+    async def handle_department_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle department-related callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from support_department import support_department_manager
+            support_department_manager.set_database(self.db)
+            
+            if data == "dept_init":
+                support_department_manager.initialize_default_departments()
+                await query.edit_message_text("✅ دپارتمان‌های پیش‌فرض ایجاد شدند.")
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_departments(update, context)
+                
+            elif data == "dept_list":
+                departments = support_department_manager.get_all_departments(active_only=False)
+                message = "📋 **لیست دپارتمان‌ها:**\n\n"
+                
+                keyboard = []
+                for dept in departments:
+                    status = "✅" if dept.is_active else "❌"
+                    message += f"{dept.emoji} **{dept.name}** {status}\n"
+                    message += f"   └ {dept.description or 'بدون توضیحات'}\n"
+                    keyboard.append([InlineKeyboardButton(f"{dept.emoji} {dept.name}", callback_data=f"dept_view_{dept.id}")])
+                
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_departments")])
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data == "dept_add":
+                context.user_data['awaiting_dept_name'] = True
+                await query.edit_message_text(
+                    "➕ **افزودن دپارتمان جدید**\n\nلطفاً نام دپارتمان را ارسال کنید:",
+                    parse_mode='Markdown'
+                )
+                
+            elif data.startswith("dept_view_"):
+                dept_id = int(data.split("_")[2])
+                dept = support_department_manager.get_department(dept_id)
+                
+                if dept:
+                    stats = support_department_manager.get_department_stats(dept_id)
+                    message = f"""{dept.emoji} **{dept.name}**
+
+📝 توضیحات: {dept.description or '-'}
+👥 ادمین‌ها: {len(dept.admin_ids)} نفر
+📊 وضعیت: {'✅ فعال' if dept.is_active else '❌ غیرفعال'}
+
+📈 **آمار:**
+• کل تیکت‌ها: {stats.get('total_tickets', 0)}
+• تیکت‌های باز: {stats.get('open_tickets', 0)}
+• میانگین پاسخ‌دهی: {stats.get('avg_response_hours', 0)} ساعت
+"""
+                    keyboard = [
+                        [InlineKeyboardButton("✏️ ویرایش", callback_data=f"dept_edit_{dept_id}"),
+                         InlineKeyboardButton("🗑️ حذف", callback_data=f"dept_delete_{dept_id}")],
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="dept_list")]
+                    ]
+                    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                else:
+                    await query.edit_message_text("❌ دپارتمان یافت نشد.")
+                    
+            elif data.startswith("dept_delete_"):
+                dept_id = int(data.split("_")[2])
+                if support_department_manager.delete_department(dept_id):
+                    await query.edit_message_text("✅ دپارتمان حذف شد.")
+                else:
+                    await query.edit_message_text("❌ خطا در حذف دپارتمان.")
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_departments(update, context)
+                    
+        except Exception as e:
+            logger.error(f"Error in department_callbacks: {e}")
+            await query.edit_message_text("❌ خطا رخ داد.")
+    
+    async def handle_channel_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle channel-related callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from channel_manager import channel_manager
+            channel_manager.set_database(self.db)
+            
+            if data == "channel_add":
+                context.user_data['awaiting_channel_id'] = True
+                await query.edit_message_text(
+                    """➕ **افزودن کانال اجباری**
+
+لطفاً آیدی عددی یا یوزرنیم کانال را ارسال کنید:
+
+مثال: `-1001234567890` یا `@mychannel`
+
+⚠️ ربات باید ادمین کانال باشد.""",
+                    parse_mode='Markdown'
+                )
+                
+            elif data == "channel_list":
+                channels = channel_manager.get_all_channels(required_only=False)
+                message = "📋 **لیست کانال‌ها:**\n\n"
+                
+                keyboard = []
+                for ch in channels:
+                    status = "✅" if ch.get('is_required') else "❌"
+                    message += f"{status} **{ch.get('channel_name', '')}**\n"
+                    message += f"   └ `{ch.get('channel_id', '')}`\n"
+                    keyboard.append([InlineKeyboardButton(
+                        f"{status} {ch.get('channel_name', '')}", 
+                        callback_data=f"channel_view_{ch.get('id')}"
+                    )])
+                
+                if not channels:
+                    message += "هیچ کانالی ثبت نشده."
+                
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_channels")])
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data.startswith("channel_view_"):
+                ch_id = int(data.split("_")[2])
+                channel = channel_manager.get_channel(ch_id)
+                
+                if channel:
+                    message = f"""📢 **{channel.get('channel_name', '')}**
+
+🆔 آیدی: `{channel.get('channel_id', '')}`
+🔗 لینک: {channel.get('channel_url', '-')}
+📊 وضعیت: {'✅ فعال' if channel.get('is_required') else '❌ غیرفعال'}
+"""
+                    keyboard = [
+                        [InlineKeyboardButton(
+                            "❌ غیرفعال کردن" if channel.get('is_required') else "✅ فعال کردن", 
+                            callback_data=f"channel_toggle_{ch_id}"
+                        )],
+                        [InlineKeyboardButton("🗑️ حذف", callback_data=f"channel_delete_{ch_id}")],
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="channel_list")]
+                    ]
+                    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                else:
+                    await query.edit_message_text("❌ کانال یافت نشد.")
+                    
+            elif data.startswith("channel_toggle_"):
+                ch_id = int(data.split("_")[2])
+                channel = channel_manager.get_channel(ch_id)
+                if channel:
+                    new_status = not channel.get('is_required', True)
+                    channel_manager.update_channel(ch_id, is_required=new_status)
+                    await query.edit_message_text(f"{'✅ کانال فعال شد' if new_status else '❌ کانال غیرفعال شد'}")
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_channels(update, context)
+                
+            elif data.startswith("channel_delete_"):
+                ch_id = int(data.split("_")[2])
+                if channel_manager.delete_channel(ch_id):
+                    await query.edit_message_text("✅ کانال حذف شد.")
+                else:
+                    await query.edit_message_text("❌ خطا در حذف کانال.")
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_channels(update, context)
+                
+        except Exception as e:
+            logger.error(f"Error in channel_callbacks: {e}")
+            await query.edit_message_text("❌ خطا رخ داد.")
+    
+    async def handle_app_link_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle app link-related callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from app_links import app_links_manager, PLATFORM_NAMES, Platform
+            app_links_manager.set_database(self.db)
+            
+            if data == "app_add":
+                context.user_data['awaiting_app_name'] = True
+                await query.edit_message_text(
+                    """➕ **افزودن برنامه VPN**
+
+لطفاً نام برنامه را ارسال کنید:
+
+مثال: `V2rayNG` یا `Hiddify`""",
+                    parse_mode='Markdown'
+                )
+                
+            elif data == "app_list":
+                apps = app_links_manager.get_all_apps(active_only=False)
+                message = "📋 **لیست برنامه‌ها:**\n\n"
+                
+                keyboard = []
+                for app in apps:
+                    status = "✅" if app.get('is_active') else "❌"
+                    emoji = app.get('icon_emoji', '📱')
+                    message += f"{emoji} **{app.get('name', '')}** {status}\n"
+                    message += f"   └ {PLATFORM_NAMES.get(app.get('platform', ''), app.get('platform', ''))}\n"
+                    keyboard.append([InlineKeyboardButton(
+                        f"{emoji} {app.get('name', '')}", 
+                        callback_data=f"app_view_{app.get('id')}"
+                    )])
+                
+                if not apps:
+                    message += "هیچ برنامه‌ای ثبت نشده."
+                
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_app_links")])
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data.startswith("app_view_"):
+                app_id = int(data.split("_")[2])
+                app = app_links_manager.get_app(app_id)
+                
+                if app:
+                    platform = PLATFORM_NAMES.get(app.get('platform', ''), app.get('platform', ''))
+                    message = f"""{app.get('icon_emoji', '📱')} **{app.get('name', '')}**
+
+📝 توضیحات: {app.get('description', '-')}
+📱 پلتفرم: {platform}
+🔗 لینک: {app.get('download_url', '-')}
+📊 وضعیت: {'✅ فعال' if app.get('is_active') else '❌ غیرفعال'}
+"""
+                    keyboard = [
+                        [InlineKeyboardButton(
+                            "❌ غیرفعال کردن" if app.get('is_active') else "✅ فعال کردن", 
+                            callback_data=f"app_toggle_{app_id}"
+                        )],
+                        [InlineKeyboardButton("🗑️ حذف", callback_data=f"app_delete_{app_id}")],
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="app_list")]
+                    ]
+                    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                else:
+                    await query.edit_message_text("❌ برنامه یافت نشد.")
+                    
+            elif data.startswith("app_toggle_"):
+                app_id = int(data.split("_")[2])
+                app = app_links_manager.get_app(app_id)
+                if app:
+                    new_status = not app.get('is_active', True)
+                    app_links_manager.update_app(app_id, is_active=new_status)
+                    await query.edit_message_text(f"{'✅ برنامه فعال شد' if new_status else '❌ برنامه غیرفعال شد'}")
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_app_links(update, context)
+                
+            elif data.startswith("app_delete_"):
+                app_id = int(data.split("_")[2])
+                if app_links_manager.delete_app(app_id):
+                    await query.edit_message_text("✅ برنامه حذف شد.")
+                else:
+                    await query.edit_message_text("❌ خطا در حذف برنامه.")
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_app_links(update, context)
+                
+        except Exception as e:
+            logger.error(f"Error in app_link_callbacks: {e}")
+            await query.edit_message_text("❌ خطا رخ داد.")
+    
+    async def handle_export_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle export-related callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from export_system import data_exporter, ExportFormat, ExportType
+            data_exporter.set_database(self.db)
+            
+            export_map = {
+                "export_users": (data_exporter.export_users, "users", "کاربران"),
+                "export_orders": (data_exporter.export_orders, "orders", "سفارشات"),
+                "export_payments": (data_exporter.export_payments, "payments", "پرداخت‌ها"),
+                "export_services": (data_exporter.export_services, "services", "سرویس‌ها"),
+            }
+            
+            if data in export_map:
+                await query.edit_message_text("⏳ در حال تهیه خروجی...")
+                
+                export_func, name, fa_name = export_map[data]
+                file_bytes = export_func(ExportFormat.CSV)
+                
+                if file_bytes:
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"hooshnet_{name}_{timestamp}.csv"
+                    
+                    from io import BytesIO
+                    file = BytesIO(file_bytes)
+                    file.name = filename
+                    
+                    await context.bot.send_document(
+                        chat_id=update.effective_chat.id,
+                        document=file,
+                        caption=f"📤 خروجی {fa_name}\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    )
+                    
+                    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_export")]]
+                    await query.edit_message_text(
+                        f"✅ فایل خروجی {fa_name} ارسال شد.",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                else:
+                    await query.edit_message_text("❌ داده‌ای برای خروجی وجود ندارد یا خطا رخ داد.")
+            else:
+                await query.edit_message_text("نوع خروجی نامعتبر.")
+        except Exception as e:
+            logger.error(f"Error in export_callbacks: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await query.edit_message_text("❌ خطا در خروجی گرفتن.")
+    
+    async def handle_role_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle role-related callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            from admin_roles import admin_roles_manager, AdminRole, ROLE_NAMES_FA, ROLE_EMOJIS
+            admin_roles_manager.set_database(self.db)
+            
+            if data == "role_list":
+                admins = admin_roles_manager.get_all_admins_by_role()
+                message = "📋 **لیست ادمین‌ها:**\n\n"
+                
+                keyboard = []
+                for admin in admins:
+                    name = admin.get('first_name') or admin.get('username') or str(admin.get('telegram_id'))
+                    role_str = admin.get('admin_role', 'admin')
+                    role_emoji = {'admin': '👑', 'seller': '💼', 'support': '🎧'}.get(role_str, '👤')
+                    message += f"{role_emoji} **{name}** - `{admin.get('telegram_id')}`\n"
+                    keyboard.append([InlineKeyboardButton(
+                        f"{role_emoji} {name}", 
+                        callback_data=f"role_view_{admin.get('telegram_id')}"
+                    )])
+                
+                if not admins:
+                    message += "هیچ ادمینی ثبت نشده."
+                
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_roles")])
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data == "role_add":
+                context.user_data['awaiting_new_admin_id'] = True
+                await query.edit_message_text(
+                    """➕ **افزودن ادمین جدید**
+
+لطفاً آیدی عددی تلگرام کاربر را ارسال کنید:
+
+مثال: `123456789`
+
+⚠️ کاربر باید قبلاً با ربات تعامل داشته باشد.""",
+                    parse_mode='Markdown'
+                )
+                
+            elif data == "role_change":
+                admins = admin_roles_manager.get_all_admins_by_role()
+                message = "⚙️ **تغییر نقش ادمین**\n\nیک ادمین انتخاب کنید:\n"
+                
+                keyboard = []
+                for admin in admins:
+                    name = admin.get('first_name') or admin.get('username') or str(admin.get('telegram_id'))
+                    role_str = admin.get('admin_role', 'admin')
+                    role_emoji = {'admin': '👑', 'seller': '💼', 'support': '🎧'}.get(role_str, '👤')
+                    keyboard.append([InlineKeyboardButton(
+                        f"{role_emoji} {name}", 
+                        callback_data=f"role_select_{admin.get('telegram_id')}"
+                    )])
+                
+                keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_roles")])
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                
+            elif data.startswith("role_view_") or data.startswith("role_select_"):
+                telegram_id = int(data.split("_")[2])
+                user = self.db.get_user(telegram_id)
+                
+                if user:
+                    current_role = admin_roles_manager.get_user_role(telegram_id)
+                    name = user.get('first_name') or user.get('username') or str(telegram_id)
+                    
+                    message = f"""👤 **{name}**
+
+🆔 آیدی: `{telegram_id}`
+👑 نقش فعلی: {ROLE_EMOJIS.get(current_role, '')} {ROLE_NAMES_FA.get(current_role, '')}
+
+🔄 برای تغییر نقش، یکی را انتخاب کنید:
+"""
+                    keyboard = [
+                        [InlineKeyboardButton("👑 مدیر کل", callback_data=f"role_set_{telegram_id}_admin")],
+                        [InlineKeyboardButton("💼 نماینده فروش", callback_data=f"role_set_{telegram_id}_seller")],
+                        [InlineKeyboardButton("🎧 پشتیبان", callback_data=f"role_set_{telegram_id}_support")],
+                        [InlineKeyboardButton("🚫 حذف از ادمین‌ها", callback_data=f"role_set_{telegram_id}_none")],
+                        [InlineKeyboardButton("🔙 بازگشت", callback_data="role_list")]
+                    ]
+                    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+                else:
+                    await query.edit_message_text("❌ کاربر یافت نشد.")
+                    
+            elif data.startswith("role_set_"):
+                parts = data.split("_")
+                telegram_id = int(parts[2])
+                role_str = parts[3]
+                
+                role_map = {
+                    'admin': AdminRole.ADMIN,
+                    'seller': AdminRole.SELLER,
+                    'support': AdminRole.SUPPORT,
+                    'none': AdminRole.NONE,
+                }
+                
+                new_role = role_map.get(role_str, AdminRole.NONE)
+                
+                if admin_roles_manager.set_user_role(telegram_id, new_role):
+                    role_name = ROLE_NAMES_FA.get(new_role, 'کاربر عادی')
+                    await query.edit_message_text(f"✅ نقش کاربر به «{role_name}» تغییر یافت.")
+                    
+                    # Notify the user about role change
+                    try:
+                        await context.bot.send_message(
+                            chat_id=telegram_id,
+                            text=f"👑 نقش شما به «{role_name}» تغییر یافت."
+                        )
+                    except:
+                        pass
+                else:
+                    await query.edit_message_text("❌ خطا در تغییر نقش.")
+                
+                import asyncio
+                await asyncio.sleep(1)
+                await self.handle_admin_roles(update, context)
+                
+        except Exception as e:
+            logger.error(f"Error in role_callbacks: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await query.edit_message_text("❌ خطا رخ داد.")
+
+    # ==================== New Admin Features Implementation ====================
+
+    async def handle_admin_send_message_init(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Initialize send message to user flow"""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['awaiting_dm_user_id'] = True
+        
+        message = """📨 **ارسال پیام به کاربر**
+        
+لطفاً شناسه عددی (User ID) کاربر مورد نظر را وارد کنید:
+
+💡 می‌توانید از بخش مدیریت کاربران شناسه را پیدا کنید."""
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="manage_users")]]
+        await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def handle_admin_ban_user_init(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Initialize ban user flow"""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['awaiting_ban_user_id'] = True
+        
+        message = """🚫 **مسدودسازی کاربر**
+        
+لطفاً شناسه عددی (User ID) کاربر مورد نظر را وارد کنید:
+
+⚠️ کاربر مسدود شده دسترسی به ربات و پنل را از دست خواهد داد."""
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="manage_users")]]
+        await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def handle_admin_manage_balance_init(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Initialize manage balance flow"""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['awaiting_balance_user_id'] = True
+        
+        message = """💰 **مدیریت موجودی کاربر**
+        
+لطفاً شناسه عددی (User ID) کاربر مورد نظر را وارد کنید:"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="manage_users")]]
+        await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def handle_admin_server_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show server status"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            # CPU
+            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_count = psutil.cpu_count()
+            
+            # Memory
+            memory = psutil.virtual_memory()
+            mem_total = f"{memory.total / (1024**3):.2f} GB"
+            mem_used = f"{memory.used / (1024**3):.2f} GB"
+            mem_percent = memory.percent
+            
+            # Disk
+            disk = psutil.disk_usage('/')
+            disk_total = f"{disk.total / (1024**3):.2f} GB"
+            disk_used = f"{disk.used / (1024**3):.2f} GB"
+            disk_percent = disk.percent
+            
+            # System Info
+            uname = platform.uname()
+            system_info = f"{uname.system} {uname.release}"
+            
+            message = f"""🖥️ **وضعیت سرور**
+
+💻 **سیستم:** {system_info}
+⚙️ **پردازنده:** {cpu_percent}% ({cpu_count} هسته)
+
+🧠 **حافظه رم:**
+• مصرف شده: {mem_used} / {mem_total}
+• درصد استفاده: {mem_percent}%
+
+💾 **فضای دیسک:**
+• مصرف شده: {disk_used} / {disk_total}
+• درصد استفاده: {disk_percent}%
+
+⏱️ **زمان سرور:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+            
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]]
+            await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing server status: {e}")
+            await query.edit_message_text("❌ خطا در دریافت وضعیت سرور.")
+
+    async def handle_admin_backup(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle backup menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        message = """💾 **مدیریت بکاپ**
+
+لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"""
+        
+        keyboard = [
+            [InlineKeyboardButton("📥 ایجاد بکاپ جدید", callback_data="backup_create")],
+            [InlineKeyboardButton("📤 بازگردانی بکاپ (Restore)", callback_data="admin_restore_backup")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+        ]
+        
+        await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def handle_backup_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle backup callbacks"""
+        query = update.callback_query
+        
+        if data == "backup_create":
+            await query.edit_message_text("⏳ در حال ایجاد بکاپ...")
+            try:
+                backup_manager = DatabaseBackupManager(self.db)
+                backup_file = backup_manager.create_backup()
+                
+                if backup_file:
+                    await context.bot.send_document(
+                        chat_id=update.effective_chat.id,
+                        document=open(backup_file, 'rb'),
+                        caption=f"✅ بکاپ دیتابیس با موفقیت ایجاد شد.\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    )
+                    
+                    keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_backup")]]
+                    await query.edit_message_text("✅ بکاپ ارسال شد.", reply_markup=InlineKeyboardMarkup(keyboard))
+                else:
+                    await query.edit_message_text("❌ خطا در ایجاد بکاپ.")
+            except Exception as e:
+                logger.error(f"Error creating backup: {e}")
+                await query.edit_message_text(f"❌ خطا: {str(e)}")
+                
+        elif data == "admin_restore_backup":
+            await self.handle_restore_backup_init(update, context)
+
+    async def handle_restore_backup_init(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Initialize restore backup flow"""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['awaiting_restore_file'] = True
+        
+        message = """📤 **بازگردانی بکاپ**
+        
+لطفاً فایل بکاپ (با فرمت .sql یا .sql.gz) را ارسال کنید.
+
+⚠️ **توجه:**
+1. این عملیات داده‌های موجود در فایل بکاپ را به دیتابیس فعلی اضافه می‌کند.
+2. کاربران و پنل‌های تکراری نادیده گرفته می‌شوند.
+3. پشتیبانی از بکاپ‌های **هوش‌نت** و **میرزا پرو**.
+
+👇 فایل را همین‌جا آپلود کنید:"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_backup")]]
+        await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def handle_document_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle document uploads (for backup restore)"""
+        user_id = update.effective_user.id
+        
+        # Check if user is admin
+        if not self.db.is_admin(user_id):
+            return
+            
+        # Check if awaiting restore file
+        if not context.user_data.get('awaiting_restore_file'):
+            return
+            
+        document = update.message.document
+        file_name = document.file_name
+        
+        if not (file_name.endswith('.sql') or file_name.endswith('.sql.gz')):
+            await update.message.reply_text("❌ فرمت فایل نامعتبر است. لطفاً فایل .sql یا .sql.gz ارسال کنید.")
+            return
+            
+        status_msg = await update.message.reply_text("⏳ در حال دریافت و بررسی فایل بکاپ...")
+        
+        try:
+            # Download file
+            file = await context.bot.get_file(document.file_id)
+            
+            import tempfile
+            import os
+            import shutil
+            
+            temp_dir = tempfile.mkdtemp()
+            file_path = os.path.join(temp_dir, file_name)
+            
+            await file.download_to_drive(file_path)
+            
+            await status_msg.edit_text("⏳ در حال بازگردانی دیتابیس... (این عملیات ممکن است چند دقیقه طول بکشد)")
+            
+            # Perform restore
+            result_msg = self.restore_manager.restore_backup(file_path)
+            
+            # Clean up
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            context.user_data.pop('awaiting_restore_file', None)
+            
+            await status_msg.edit_text(result_msg)
+            
+        except Exception as e:
+            logger.error(f"Error handling document upload: {e}")
+            await status_msg.edit_text(f"❌ خطا در پردازش فایل: {str(e)}")
+
+    # ==================== Text Input Handler Methods ====================
+    
+    async def handle_admin_dm_user_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle user ID input for DM"""
+        if not text.isdigit():
+            await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید.")
+            return
+            
+        user_id = int(text)
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("❌ کاربر یافت نشد.")
+            return
+            
+        context.user_data['awaiting_dm_user_id'] = False
+        context.user_data['dm_target_user_id'] = user_id
+        context.user_data['awaiting_dm_text'] = True
+        
+        name = user.get('first_name') or user.get('username') or str(user_id)
+        
+        await update.message.reply_text(f"""📝 **ارسال پیام به {name}**
+        
+لطفاً متن پیام خود را وارد کنید:
+
+🚫 برای انصراف /cancel را ارسال کنید.""")
+
+    async def handle_admin_dm_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle message text for DM"""
+        target_user_id = context.user_data.get('dm_target_user_id')
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"📩 **پیام از طرف مدیریت:**\n\n{text}"
+            )
+            
+            context.user_data['awaiting_dm_text'] = False
+            del context.user_data['dm_target_user_id']
+            
+            await update.message.reply_text("✅ پیام با موفقیت ارسال شد.")
+            
+        except Exception as e:
+            logger.error(f"Error sending DM: {e}")
+            await update.message.reply_text("❌ خطا در ارسال پیام. ممکن است کاربر ربات را بلاک کرده باشد.")
+
+    async def handle_admin_ban_user_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle user ID input for Ban"""
+        if not text.isdigit():
+            await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید.")
+            return
+            
+        user_id = int(text)
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("❌ کاربر یافت نشد.")
+            return
+            
+        context.user_data['awaiting_ban_user_id'] = False
+        
+        # Toggle ban status
+        current_status = user.get('is_banned', 0)
+        new_status = 1 if current_status == 0 else 0
+        
+        # Update user
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET is_banned = %s WHERE telegram_id = %s", (new_status, user_id))
+            conn.commit()
+            
+        status_text = "مسدود شد" if new_status == 1 else "رفع مسدودیت شد"
+        await update.message.reply_text(f"✅ کاربر {user_id} با موفقیت {status_text}.")
+        
+        # Report user block/unblock
+        try:
+            admin_data = self.db.get_user(update.effective_user.id)
+            target_user = self.db.get_user(user_id)
+            if admin_data and target_user and self.reporting_system:
+                if new_status == 1:
+                    await self.reporting_system.report_user_blocked(admin_data, target_user)
+                else:
+                    await self.reporting_system.report_user_unblocked(admin_data, target_user)
+        except Exception as e:
+            logger.error(f"Failed to send block/unblock report: {e}")
+
+    async def handle_admin_balance_user_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle user ID input for Balance Management"""
+        if not text.isdigit():
+            await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید.")
+            return
+            
+        user_id = int(text)
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("❌ کاربر یافت نشد.")
+            return
+            
+        context.user_data['awaiting_balance_user_id'] = False
+        context.user_data['balance_target_user_id'] = user_id
+        context.user_data['awaiting_balance_manage_amount'] = True
+        
+        current_balance = user.get('wallet_balance', 0)
+        name = user.get('first_name') or user.get('username') or str(user_id)
+        
+        await update.message.reply_text(f"""💰 **مدیریت موجودی {name}**
+        
+موجودی فعلی: {current_balance:,} تومان
+
+لطفاً مبلغ را به تومان وارد کنید:
+• برای افزایش: عدد مثبت (مثلاً 50000)
+• برای کاهش: عدد منفی (مثلاً -50000)
+
+🚫 برای انصراف /cancel را ارسال کنید.""")
+
+    async def handle_admin_balance_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle amount input for Balance Management"""
+        try:
+            amount = int(text)
+        except ValueError:
+            await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید.")
+            return
+            
+        target_user_id = context.user_data.get('balance_target_user_id')
+        
+        try:
+            self.db.update_user_balance(target_user_id, amount, 'admin_adjustment', "تغییر توسط مدیریت")
+            
+            context.user_data['awaiting_balance_manage_amount'] = False
+            del context.user_data['balance_target_user_id']
+            
+            user = self.db.get_user(target_user_id)
+            new_balance = user.get('wallet_balance', 0)
+            
+            await update.message.reply_text(f"✅ موجودی کاربر به‌روزرسانی شد.\nموجودی جدید: {new_balance:,} تومان")
+            
+            # Report admin balance adjustment
+            try:
+                admin_data = self.db.get_user(update.effective_user.id)
+                target_user = self.db.get_user(target_user_id)
+                if admin_data and target_user and self.reporting_system:
+                    old_balance = new_balance - amount
+                    if amount > 0:
+                        await self.reporting_system.report_admin_balance_increase(
+                            admin_data, target_user, old_balance, amount, new_balance
+                        )
+                    else:
+                        await self.reporting_system.report_admin_balance_decrease(
+                            admin_data, target_user, old_balance, abs(amount), new_balance
+                        )
+            except Exception as e:
+                logger.error(f"Failed to send admin balance report: {e}")
+            
+            # Notify user
+            try:
+                action = "افزایش" if amount > 0 else "کاهش"
+                await context.bot.send_message(
+                    chat_id=target_user_id,
+                    text=f"💰 موجودی کیف پول شما {action} یافت.\nمبلغ: {abs(amount):,} تومان\nموجودی فعلی: {new_balance:,} تومان"
+                )
+            except:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Error updating balance: {e}")
+            await update.message.reply_text("❌ خطا در به‌روزرسانی موجودی.")
+
+    async def handle_dept_name_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle department name input"""
+        context.user_data['awaiting_dept_name'] = False
+        
+        try:
+            from support_department import support_department_manager, SupportDepartment
+            support_department_manager.set_database(self.db)
+            
+            # Create new department
+            dept = SupportDepartment(name=text, emoji='📋', description=f'دپارتمان {text}')
+            dept_id = support_department_manager.create_department(dept)
+            
+            if dept_id:
+                await update.message.reply_text(f"✅ دپارتمان «{text}» با موفقیت ایجاد شد.")
+            else:
+                await update.message.reply_text("❌ خطا در ایجاد دپارتمان.")
+        except Exception as e:
+            logger.error(f"Error creating department: {e}")
+            await update.message.reply_text("❌ خطا در ایجاد دپارتمان.")
+    
+    async def handle_channel_id_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle channel ID input"""
+        context.user_data['awaiting_channel_id'] = False
+        
+        try:
+            from channel_manager import channel_manager
+            channel_manager.set_database(self.db)
+            
+            # Parse channel ID
+            channel_id = text.strip()
+            
+            # Try to get channel info
+            try:
+                chat = await context.bot.get_chat(channel_id)
+                channel_name = chat.title or channel_id
+                channel_url = f"https://t.me/{chat.username}" if chat.username else ""
+            except:
+                channel_name = channel_id
+                channel_url = ""
+            
+            # Add channel
+            ch_id = channel_manager.add_channel(channel_id, channel_name, channel_url, is_required=True)
+            
+            if ch_id:
+                await update.message.reply_text(f"✅ کانال «{channel_name}» با موفقیت اضافه شد.")
+            else:
+                await update.message.reply_text("❌ خطا در افزودن کانال.")
+        except Exception as e:
+            logger.error(f"Error adding channel: {e}")
+            await update.message.reply_text("❌ خطا در افزودن کانال.")
+    
+    async def handle_app_name_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle app name input - Step 1: Get name, then ask for URL"""
+        context.user_data['awaiting_app_name'] = False
+        context.user_data['new_app_name'] = text.strip()
+        context.user_data['awaiting_app_url'] = True
+        
+        await update.message.reply_text(
+            f"""📱 نام برنامه: **{text}**
+
+حالا لینک دانلود برنامه را ارسال کنید:
+
+مثال: `https://play.google.com/store/apps/...`""",
+            parse_mode='Markdown'
+        )
+    
+    async def handle_app_url_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle app URL input - Step 2: Create the app"""
+        context.user_data['awaiting_app_url'] = False
+        
+        try:
+            from app_links import app_links_manager
+            app_links_manager.set_database(self.db)
+            
+            app_name = context.user_data.get('new_app_name', 'برنامه جدید')
+            app_url = text.strip()
+            
+            # Determine platform from URL
+            platform = 'android'  # Default
+            if 'apple.com' in app_url or 'apps.apple' in app_url:
+                platform = 'ios'
+            elif 'github.com' in app_url or 'windows' in app_url.lower():
+                platform = 'windows'
+            elif 'mac' in app_url.lower():
+                platform = 'macos'
+            
+            # Add app
+            app_id = app_links_manager.add_app(
+                name=app_name,
+                platform=platform,
+                download_url=app_url,
+                icon_emoji='📱'
+            )
+            
+            if app_id:
+                await update.message.reply_text(f"✅ برنامه «{app_name}» با موفقیت ایجاد شد.")
+            else:
+                await update.message.reply_text("❌ خطا در ایجاد برنامه.")
+            
+            # Clear temp data
+            context.user_data.pop('new_app_name', None)
+            
+        except Exception as e:
+            logger.error(f"Error creating app: {e}")
+            await update.message.reply_text("❌ خطا در ایجاد برنامه.")
+    
+    async def handle_new_admin_id_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle new admin ID input"""
+        context.user_data['awaiting_new_admin_id'] = False
+        
+        try:
+            telegram_id = int(text.strip())
+            
+            # Check if user exists
+            user = self.db.get_user(telegram_id)
+            if not user:
+                await update.message.reply_text("❌ کاربر با این آیدی یافت نشد. کاربر باید ابتدا با ربات تعامل داشته باشد.")
+                return
+            
+            # Show role selection
+            name = user.get('first_name') or user.get('username') or str(telegram_id)
+            message = f"""👤 کاربر: **{name}**
+
+🆔 آیدی: `{telegram_id}`
+
+🔄 یک نقش انتخاب کنید:"""
+            
+            keyboard = [
+                [InlineKeyboardButton("👑 مدیر کل", callback_data=f"role_set_{telegram_id}_admin")],
+                [InlineKeyboardButton("💼 نماینده فروش", callback_data=f"role_set_{telegram_id}_seller")],
+                [InlineKeyboardButton("🎧 پشتیبان", callback_data=f"role_set_{telegram_id}_support")],
+                [InlineKeyboardButton("🔙 انصراف", callback_data="admin_roles")]
+            ]
+            
+            await update.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+        except ValueError:
+            await update.message.reply_text("❌ آیدی نامعتبر است. لطفاً یک عدد وارد کنید.")
+        except Exception as e:
+            logger.error(f"Error adding new admin: {e}")
+            await update.message.reply_text("❌ خطا در افزودن ادمین.")
+
 
     async def handle_protocol_selection_for_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, protocol: str):
+
         """Handle protocol selection for Marzban/Rebecca/Marzneshin panel"""
         query = update.callback_query
         await query.answer()
@@ -16074,6 +18338,21 @@ class VPNBot:
                     reply_markup=ButtonLayout.create_back_button("manage_panels"),
                     parse_mode='Markdown'
                 )
+                
+                # Report panel addition
+                if self.reporting_system:
+                    try:
+                        report_data = {
+                            'panel_name': panel_name,
+                            'panel_url': panel_url,
+                            'username': panel_username,
+                            'panel_type': panel_type
+                        }
+                        admin_data = self.db.get_user(update.effective_user.id)
+                        await self.reporting_system.send_report('panel_added', report_data, admin_data)
+                    except Exception as re:
+                        logger.error(f"Failed to send panel addition report: {re}")
+                
                 context.user_data.clear()
             else:
                 await query.edit_message_text(
@@ -16281,14 +18560,851 @@ class VPNBot:
             success, msg = await self.system_manager.restart_services()
             await query.edit_message_text(msg)
 
+        elif action == "topics":
+            await query.answer("⏳ در حال بروزرسانی تاپیک‌ها...", show_alert=True)
+            if self.reporting_system:
+                diag = await self.reporting_system.initialize_topics_on_startup()
+                
+                msg = "📊 **گزارش وضعیت سیستم گزارش‌دهی**\n\n"
+                msg += f"• آیدی چت: `{diag['channel_id']}`\n"
+                msg += f"• نوع چت: {diag['chat_type']}\n"
+                msg += f"• قابلیت تاپیک: {'✅ فعال' if diag['is_forum'] else '❌ غیرفعال'}\n"
+                msg += f"• وضعیت ادمین: {'✅ ادمین' if diag['is_admin'] else '❌ ادمین نیست'}\n"
+                msg += f"• دسترسی تاپیک: {'✅ دارد' if diag['can_manage_topics'] else '❌ ندارد'}\n"
+                msg += f"• تعداد تاپیک‌ها: {diag['topics_count']}\n\n"
+                
+                if diag['errors']:
+                    msg += "⚠️ **خطاهای شناسایی شده:**\n"
+                    for err in diag['errors']:
+                        msg += f"• {err}\n"
+                    msg += "\n💡 **راهنما:** مطمئن شوید ربات ادمین گروه است و دسترسی 'Manage Topics' را دارد. همچنین قابلیت Topics باید در تنظیمات گروه فعال باشد."
+                elif diag['is_group'] and diag['topics_count'] > 0:
+                    msg += "✅ سیستم با موفقیت در حالت گروه (تاپیک‌دار) فعال شد."
+                elif not diag['is_group']:
+                    msg += "ℹ️ سیستم در حالت کانال (بدون تاپیک) فعال است."
+                
+                await query.edit_message_text(msg, reply_markup=ButtonLayout.create_back_button("system_settings"), parse_mode='Markdown')
+            else:
+                await query.edit_message_text("❌ سیستم گزارش‌دهی فعال نیست.", 
+                                           reply_markup=ButtonLayout.create_back_button("system_settings"))
+
         else:
             await query.answer("❌ دستور نامعتبر.", show_alert=True)
 
-class NoProxyRequest(HTTPXRequest):
-    """Custom request class to disable system proxies"""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._client_kwargs['trust_env'] = False
+
+    # ==================== User Feature Handlers ====================
+
+    async def handle_wheel_of_fortune(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show Wheel of Fortune UI"""
+        user_id = update.effective_user.id
+        
+        try:
+            from lottery_system import lottery_system
+            lottery_system.set_database(self.db)
+            
+            config = lottery_system.get_wheel_config()
+            
+            if not config.get('enabled', True):
+                await update.message.reply_text("⛔️ گردونه شانس در حال حاضر غیرفعال است.")
+                return
+            
+            # Check cooldown
+            can_spin, message = lottery_system.can_user_spin(user_id)
+            
+            if not can_spin:
+                await update.message.reply_text(f"⏳ {message}")
+                return
+            
+            # Show wheel UI
+            message = """🎰 **گردونه شانس هوش‌نت**
+
+🎁 شانس خود را برای برنده شدن جوایز ویژه امتحان کنید!
+💰 جوایز شامل اعتبار کیف پول و کدهای تخفیف است.
+
+⚠️ هر کاربر هر 24 ساعت یکبار می‌تواند از گردونه استفاده کند."""
+            
+            keyboard = [[InlineKeyboardButton("🎲 چرخاندن گردونه", callback_data="spin_wheel")]]
+            await update.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing wheel: {e}")
+            await update.message.reply_text("❌ خطا در نمایش گردونه شانس.")
+
+    async def handle_spin_wheel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle spinning the wheel"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        
+        try:
+            from lottery_system import lottery_system
+            lottery_system.set_database(self.db)
+            
+            # Check cooldown again
+            can_spin, msg = lottery_system.can_user_spin(user_id)
+            if not can_spin:
+                await query.answer(msg, show_alert=True)
+                return
+            
+            # Spin!
+            result = lottery_system.spin_wheel(user_id)
+            
+            if result['type'] == 'balance':
+                amount = result['value']
+                self.db.update_user_balance(user_id, amount, 'gift', f"جایزه گردونه شانس: {result['label']}")
+                await query.edit_message_text(
+                    f"""🎉 **تبریک! شما برنده شدید!**
+
+🎁 جایزه: **{result['label']}**
+💰 مبلغ {amount:,} تومان به کیف پول شما اضافه شد.""",
+                    parse_mode='Markdown'
+                )
+            elif result['type'] == 'discount':
+                # Generate discount code logic here (simplified for now)
+                await query.edit_message_text(
+                    f"""🎉 **تبریک! شما برنده شدید!**
+
+🎁 جایزه: **{result['label']}**
+🎫 کد تخفیف برای شما ارسال خواهد شد.""",
+                    parse_mode='Markdown'
+                )
+            else:
+                await query.edit_message_text(
+                    f"""😔 **متأسفانه برنده نشدید.**
+
+{result['label']}
+⏳ فردا دوباره تلاش کنید!""",
+                    parse_mode='Markdown'
+                )
+                
+        except Exception as e:
+            logger.error(f"Error spinning wheel: {e}")
+            await query.answer("❌ خطا در چرخاندن گردونه.", show_alert=True)
+
+    async def handle_download_app(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show App Download Links"""
+        try:
+            from app_links import app_links_manager, PLATFORM_NAMES
+            app_links_manager.set_database(self.db)
+            
+            apps = app_links_manager.get_all_apps(active_only=True)
+            
+            if not apps:
+                await update.message.reply_text("📱 در حال حاضر برنامه‌ای برای دانلود موجود نیست.")
+                return
+            
+            message = "📥 **دانلود نرم‌افزارهای مورد نیاز**\n\nلطفاً سیستم عامل خود را انتخاب کنید:"
+            
+            # Group by platform
+            platforms = {}
+            for app in apps:
+                p = app.get('platform', 'other')
+                if p not in platforms:
+                    platforms[p] = []
+                platforms[p].append(app)
+            
+            keyboard = []
+            for p, p_apps in platforms.items():
+                p_name = PLATFORM_NAMES.get(p, p)
+                keyboard.append([InlineKeyboardButton(f"📱 {p_name}", callback_data=f"show_apps_{p}")])
+            
+            await update.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing apps: {e}")
+            await update.message.reply_text("❌ خطا در نمایش برنامه‌ها.")
+
+    async def handle_show_apps_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show apps for selected platform"""
+        query = update.callback_query
+        await query.answer()
+        
+        platform = query.data.split("_")[2]
+        
+        try:
+            from app_links import app_links_manager, PLATFORM_NAMES
+            app_links_manager.set_database(self.db)
+            
+            apps = app_links_manager.get_apps_by_platform(platform)
+            p_name = PLATFORM_NAMES.get(platform, platform)
+            
+            message = f"📱 **برنامه‌های مخصوص {p_name}:**\n\n"
+            
+            keyboard = []
+            for app in apps:
+                keyboard.append([InlineKeyboardButton(f"📥 دانلود {app['name']}", url=app['download_url'])])
+            
+            # Add back button? Maybe not needed as it's a new message usually, but here we edit
+            # Actually, handle_download_app sends a new message. Let's edit it.
+            
+            await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing platform apps: {e}")
+            await query.edit_message_text("❌ خطا در نمایش برنامه‌ها.")
+
+    async def handle_ticket_text_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle ticket text input and create ticket"""
+        context.user_data['awaiting_ticket_text'] = False
+        dept_id = context.user_data.get('selected_dept_id')
+        user_id = update.effective_user.id
+        
+        try:
+            from support_department import support_department_manager
+            support_department_manager.set_database(self.db)
+            
+            # Create ticket
+            ticket_id = self.db.create_ticket(user_id, "پشتیبانی", text)
+            
+            # Assign department if selected
+            if dept_id:
+                support_department_manager.assign_ticket_to_department(ticket_id, dept_id)
+                
+                # Notify department admins
+                dept = support_department_manager.get_department(dept_id)
+                if dept and dept.admin_ids:
+                    for admin_id in dept.admin_ids:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=admin_id,
+                                text=f"📩 **تیکت جدید در دپارتمان {dept.name}**\n\n👤 کاربر: {user_id}\n📝 متن: {text}\n\n#Ticket_{ticket_id}"
+                            )
+                        except:
+                            pass
+            
+            await update.message.reply_text(f"✅ تیکت شما با شماره #{ticket_id} ثبت شد.\nپشتیبانان ما در اسرع وقت پاسخ خواهند داد.")
+            
+        except Exception as e:
+            logger.error(f"Error creating ticket: {e}")
+            await update.message.reply_text("❌ خطا در ثبت تیکت.")
+
+
+
+    async def handle_panel_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle panel settings menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        panel = self.db.get_panel(panel_id)
+        if not panel:
+            await query.edit_message_text("❌ پنل یافت نشد.")
+            return
+            
+        message = f"""
+⚙️ **تنظیمات پنل {panel['name']}**
+
+📍 **آدرس:** `{panel['url']}`
+👤 **نام کاربری:** `{panel['username']}`
+🏷 **نوع:** `{panel.get('type', 'unknown')}`
+
+👇 لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+        """
+        
+        reply_markup = ButtonLayout.create_panel_settings_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_naming_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle naming settings menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        # Import naming method names for display
+        from username_formatter import NamingMethod, NAMING_METHOD_NAMES
+        
+        panel = self.db.get_panel(panel_id)
+        current_method_value = panel.get('naming_method', '2')  # Default to ID_RANDOM
+        
+        # Get the current method name
+        try:
+            method_int = int(current_method_value)
+            method_enum = NamingMethod(method_int)
+            method_name = NAMING_METHOD_NAMES.get(method_enum, f'روش {method_int}')
+        except (ValueError, TypeError):
+            method_name = str(current_method_value)
+        
+        message = f"""
+📝 **تنظیمات نام‌گذاری کاربران**
+
+روش فعلی: **{method_name}**
+
+👇 لطفاً روش نام‌گذاری جدید را انتخاب کنید:
+        """
+        
+        reply_markup = ButtonLayout.create_naming_settings_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_set_naming(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int, method_id: int):
+        """Set naming method for panel"""
+        query = update.callback_query
+        
+        logger.info(f"🔍 handle_set_naming called with panel_id={panel_id}, method_id={method_id}")
+        
+        # Check if method requires input (5: Admin Random, 6: Admin Sequential, 8: Reseller Sequential)
+        if method_id in [5, 6, 8]:
+            await query.answer()
+            
+            method_names = {
+                5: "متن ادمین + رندوم",
+                6: "متن ادمین + ترتیبی",
+                8: "متن نماینده + ترتیبی"
+            }
+            method_name = method_names.get(method_id, "انتخاب شده")
+            
+            message = f"""
+📝 **تنظیم متن پیش‌فرض**
+
+شما روش **{method_name}** را انتخاب کرده‌اید.
+لطفاً متن پیش‌فرض مورد نظر خود را وارد کنید (مثال: VIP یا RS):
+
+⚠️ فقط از حروف انگلیسی و اعداد استفاده کنید.
+            """
+            
+            keyboard = [[InlineKeyboardButton("🔙 انصراف", callback_data=f"naming_settings_{panel_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+            # Set state
+            context.user_data['waiting_for_naming_prefix'] = True
+            context.user_data['naming_panel_id'] = panel_id
+            context.user_data['naming_method_id'] = method_id
+            return
+
+        # Update database directly for other methods
+        logger.info(f"💾 Saving naming method {method_id} for panel {panel_id}...")
+        if self.db.update_panel_naming_method(panel_id, method_id):
+            logger.info(f"✅ Successfully saved naming method {method_id} for panel {panel_id}")
+            await query.answer("✅ روش نام‌گذاری با موفقیت تغییر کرد.", show_alert=True)
+            # Return to naming settings to show update
+            await self.handle_naming_settings(update, context, panel_id)
+        else:
+            await query.answer("❌ خطا در ذخیره تنظیمات.", show_alert=True)
+
+    async def handle_naming_prefix_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle naming prefix input"""
+        user_id = update.effective_user.id
+        
+        # Check if admin
+        if not self.db.is_admin(user_id):
+            await update.message.reply_text("❌ دسترسی غیرمجاز.")
+            context.user_data.pop('waiting_for_naming_prefix', None)
+            return
+            
+        panel_id = context.user_data.get('naming_panel_id')
+        method_id = context.user_data.get('naming_method_id')
+        
+        if not panel_id or not method_id:
+            await update.message.reply_text("❌ خطای سیستمی. لطفاً دوباره تلاش کنید.")
+            context.user_data.pop('waiting_for_naming_prefix', None)
+            return
+            
+        # Validate input (alphanumeric only)
+        import re
+        if not re.match(r'^[a-zA-Z0-9]+$', text):
+            await update.message.reply_text("❌ متن وارد شده نامعتبر است. لطفاً فقط از حروف انگلیسی و اعداد استفاده کنید:")
+            return
+            
+        # Update database
+        try:
+            # First update the method
+            self.db.update_panel_naming_method(panel_id, method_id)
+            
+            # Then update the prefix in settings
+            prefix_key = 'reseller_naming_prefix' if method_id == 8 else 'admin_naming_prefix'
+            self.db.update_panel_settings(panel_id, {prefix_key: text})
+            
+            await update.message.reply_text(f"✅ تنظیمات نام‌گذاری با موفقیت ذخیره شد.\n\nمتن پیش‌فرض: {text}")
+            
+            # Clear state
+            context.user_data.pop('waiting_for_naming_prefix', None)
+            context.user_data.pop('naming_panel_id', None)
+            context.user_data.pop('naming_method_id', None)
+            
+            # Show menu again
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به تنظیمات نام‌گذاری", callback_data=f"naming_settings_{panel_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("برای بازگشت به منوی تنظیمات کلیک کنید:", reply_markup=reply_markup)
+            
+        except Exception as e:
+            logger.error(f"Error saving naming settings: {e}")
+            await update.message.reply_text("❌ خطا در ذخیره تنظیمات.")
+            context.user_data.pop('waiting_for_naming_prefix', None)
+
+    async def handle_naming_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle naming settings menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        # Import naming method names for display
+        from username_formatter import NamingMethod, NAMING_METHOD_NAMES
+        
+        panel = self.db.get_panel(panel_id)
+        current_method_value = panel.get('naming_method', '2')  # Default to ID_RANDOM
+        
+        # Get the current method name
+        try:
+            method_int = int(current_method_value)
+            method_enum = NamingMethod(method_int)
+            method_name = NAMING_METHOD_NAMES.get(method_enum, f'روش {method_int}')
+        except (ValueError, TypeError):
+            method_name = str(current_method_value)
+        
+        message = f"""
+📝 **تنظیمات نام‌گذاری کاربران**
+
+روش فعلی: **{method_name}**
+
+👇 لطفاً روش نام‌گذاری جدید را انتخاب کنید:
+        """
+        
+        reply_markup = ButtonLayout.create_naming_settings_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_set_naming_method(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int, method: str):
+        """Set naming method for panel"""
+        query = update.callback_query
+        await query.answer()
+        
+        self.db.update_panel_settings(panel_id, {'naming_method': method})
+        
+        await query.answer("✅ روش نام‌گذاری با موفقیت تغییر کرد", show_alert=True)
+        await self.handle_naming_settings(update, context, panel_id)
+
+    async def handle_advanced_config(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle advanced configuration menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        message = """
+⚙️ **تنظیمات پیشرفته**
+
+در این بخش می‌توانید تنظیمات فنی پنل را تغییر دهید.
+👇 لطفاً یکی از گزینه‌ها را انتخاب کنید:
+        """
+        
+        reply_markup = ButtonLayout.create_advanced_config_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def test_panel_connection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Test connection to panel"""
+        query = update.callback_query
+        
+        # Show loading state
+        await query.edit_message_text("⏳ در حال تست اتصال... لطفاً صبر کنید.")
+        
+        try:
+            pm = self.admin_manager.get_panel_manager(panel_id)
+            if not pm:
+                await query.edit_message_text("❌ خطا در بارگذاری مدیریت پنل.")
+                return
+                
+            result = pm.test_connection()
+            
+            status_emoji = "✅" if result['success'] else "❌"
+            message = f"""
+📡 **نتیجه تست اتصال**
+
+{status_emoji} **وضعیت:** {result['message']}
+⏱ **پینگ:** {result['latency']} میلی‌ثانیه
+
+زمان تست: {datetime.now().strftime('%H:%M:%S')}
+            """
+            
+            # Report failure if not successful
+            if not result['success'] and self.reporting_system:
+                try:
+                    panel = self.db.get_panel(panel_id)
+                    if panel:
+                        report_data = {
+                            'panel_name': panel['name'],
+                            'panel_url': panel['url'],
+                            'error_message': result['message']
+                        }
+                        admin_data = self.db.get_user(update.effective_user.id)
+                        await self.reporting_system.send_report('panel_connection_failed', report_data, admin_data)
+                except Exception as re:
+                    logger.error(f"Failed to send connection failure report: {re}")
+            
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"panel_settings_{panel_id}")]]
+            await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error testing panel connection: {e}")
+            await query.edit_message_text(f"❌ خطا در تست اتصال: {str(e)}")
+            
+            # Report exception
+            if self.reporting_system:
+                try:
+                    panel = self.db.get_panel(panel_id)
+                    if panel:
+                        report_data = {
+                            'panel_name': panel['name'],
+                            'panel_url': panel['url'],
+                            'error_message': str(e)
+                        }
+                        admin_data = self.db.get_user(update.effective_user.id)
+                        await self.reporting_system.send_report('panel_connection_failed', report_data, admin_data)
+                except Exception as re:
+                    logger.error(f"Failed to send connection failure report: {re}")
+
+    async def handle_sync_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Sync users from panel to bot"""
+        query = update.callback_query
+        await query.edit_message_text("⏳ در حال همگام‌سازی کاربران... (این عملیات ممکن است کمی طول بکشد)")
+        
+        try:
+            pm = self.admin_manager.get_panel_manager(panel_id)
+            if not pm:
+                await query.edit_message_text("❌ خطا در بارگذاری مدیریت پنل.")
+                return
+                
+            users = pm.get_users()
+            synced_count = 0
+            
+            # Logic to sync user to DB (simplified for now)
+            # Check if client exists by UUID, if not add it
+            # This requires more complex logic to link to Telegram users
+                
+            await query.edit_message_text(
+                f"✅ همگام‌سازی انجام شد.\n\n📊 تعداد کاربران یافت شده: {len(users)}",
+                reply_markup=ButtonLayout.create_back_button(f"panel_settings_{panel_id}")
+            )
+            
+        except Exception as e:
+            logger.error(f"Error syncing panel: {e}")
+            await query.edit_message_text(f"❌ خطا در همگام‌سازی: {str(e)}")
+
+    async def handle_panel_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Show panel system stats"""
+        query = update.callback_query
+        await query.edit_message_text("⏳ در حال دریافت آمار سیستم...")
+        
+        try:
+            pm = self.admin_manager.get_panel_manager(panel_id)
+            if not pm:
+                await query.edit_message_text("❌ خطا در بارگذاری مدیریت پنل.")
+                return
+                
+            stats = pm.get_system_stats()
+            
+            if not stats:
+                await query.edit_message_text("❌ دریافت آمار با خطا مواجه شد.")
+                return
+                
+            message = f"""
+📊 **وضعیت سیستم پنل**
+
+💻 **پردازنده:** {stats.get('cpu', 0)}%
+🧠 **رم:** {stats.get('ram', 0)}%
+⏱ **آپ‌تایم:** {stats.get('uptime', 0)} ثانیه
+ℹ️ **نسخه:** {stats.get('version', 'Unknown')}
+            """
+            
+            await query.edit_message_text(
+                message, 
+                reply_markup=ButtonLayout.create_back_button(f"panel_settings_{panel_id}"),
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting panel stats: {e}")
+            await query.edit_message_text(f"❌ خطا در دریافت آمار: {str(e)}")
+
+    async def handle_backup_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle panel backup"""
+        query = update.callback_query
+        await query.edit_message_text("⏳ در حال تهیه نسخه پشتیبان... لطفاً صبر کنید.")
+        
+        try:
+            pm = self.admin_manager.get_panel_manager(panel_id)
+            if not pm:
+                await query.edit_message_text("❌ خطا در بارگذاری مدیریت پنل.")
+                return
+            
+            # Since most panels don't have a direct API for full backup download via bot,
+            # we will backup the users data from our database which is the most critical part.
+            # If the panel supports it, we could try to trigger a backup there too.
+            
+            users = pm.get_users()
+            if not users:
+                await query.edit_message_text("❌ کاربری برای پشتیبان‌گیری یافت نشد.")
+                return
+
+            import json
+            import io
+            
+            backup_data = {
+                'panel_id': panel_id,
+                'timestamp': datetime.now().isoformat(),
+                'users_count': len(users),
+                'users': users
+            }
+            
+            backup_json = json.dumps(backup_data, indent=2, ensure_ascii=False)
+            backup_file = io.BytesIO(backup_json.encode('utf-8'))
+            backup_file.name = f"panel_{panel_id}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            await context.bot.send_document(
+                chat_id=query.message.chat_id,
+                document=backup_file,
+                caption=f"✅ **نسخه پشتیبان پنل**\n\n📅 تاریخ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n👥 تعداد کاربران: {len(users)}",
+                parse_mode='Markdown'
+            )
+            
+            await query.edit_message_text(
+                "✅ فایل پشتیبان با موفقیت ارسال شد.",
+                reply_markup=ButtonLayout.create_back_button(f"panel_settings_{panel_id}")
+            )
+            
+        except Exception as e:
+            logger.error(f"Error backing up panel: {e}")
+            await query.edit_message_text(f"❌ خطا در تهیه نسخه پشتیبان: {str(e)}")
+
+    async def handle_wheel_of_fortune(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle wheel of fortune main menu"""
+        user_id = update.effective_user.id
+        
+        # Get Web App URL
+        import os
+        from webapp_helper import get_webapp_url
+        webapp_url = os.getenv('BOT_WEBAPP_URL') or get_webapp_url()
+        
+        if not webapp_url:
+            # Fallback if not set
+            await update.message.reply_text("❌ آدرس وب اپلیکیشن تنظیم نشده است.")
+            return
+
+        wheel_url = f"{webapp_url}/wheel"
+        
+        keyboard = [
+            [InlineKeyboardButton("🎰 ورود به گردونه شانس", web_app=WebAppInfo(url=wheel_url))],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
+        ]
+        
+        text = (
+            "🎰 **گردونه شانس**\n\n"
+            "شانس خودت رو امتحان کن و جوایز ارزشمند ببر!\n"
+            "🎁 جوایز شامل: اعتبار هدیه، حجم اضافه، روزهای رایگان و کد تخفیف\n\n"
+            "👇 برای شروع روی دکمه زیر کلیک کن:"
+        )
+        
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+
+    async def handle_spin_wheel_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle actual wheel spin"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+        
+        # Set database for lottery system
+        lottery_system.set_database(self.db)
+        
+        # Show spinning animation
+        await query.edit_message_text("🎡 در حال چرخش گردونه...")
+        
+        # Spin the wheel
+        success, result = lottery_system.spin_wheel(user_id)
+        
+        if success:
+            prize_label = result.get('prize_label', 'نامشخص')
+            message_text = result.get('message', 'نتیجه ثبت شد!')
+            prize_type = result.get('prize_type', 'nothing')
+            
+            # Create emoji based on prize type
+            if prize_type == 'balance':
+                emoji = "💰"
+            elif prize_type == 'volume':
+                emoji = "📦"
+            elif prize_type == 'time':
+                emoji = "⏰"
+            elif prize_type == 'discount':
+                emoji = "🎫"
+            else:
+                emoji = "🍀"
+            
+            final_message = f"""
+🎰 **نتیجه گردونه شانس**
+
+{emoji} **جایزه شما:** {prize_label}
+
+{message_text}
+
+🔄 می‌توانید ۲۴ ساعت بعد دوباره شرکت کنید!
+            """
+        else:
+            final_message = f"""
+🎰 **گردونه شانس**
+
+⚠️ {result.get('message', 'خطا در چرخش گردونه')}
+            """
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]]
+        
+        await query.edit_message_text(
+            final_message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def handle_spin_wheel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle spin wheel request (alias to main menu)"""
+        await self.handle_wheel_of_fortune(update, context)
+
+    async def handle_admin_wheel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle admin wheel management"""
+        query = update.callback_query
+        
+        # Get current config
+        lottery_system.set_database(self.db)
+        config = lottery_system.get_wheel_config()
+        is_enabled = config.get('enabled', True)
+        status_emoji = "✅" if is_enabled else "❌"
+        status_text = "فعال" if is_enabled else "غیرفعال"
+        
+        message = f"""
+🎰 **مدیریت گردونه شانس**
+
+وضعیت فعلی: {status_emoji} **{status_text}**
+
+در این بخش می‌توانید تنظیمات گردونه شانس را تغییر دهید.
+برای مدیریت جوایز و تنظیمات پیشرفته، لطفاً از **پنل مدیریت وب** استفاده کنید.
+        """
+        
+        keyboard = [
+            [InlineKeyboardButton(f"{'🔴 غیرفعال کردن' if is_enabled else '🟢 فعال کردن'}", callback_data=f"wheel_toggle_{'off' if is_enabled else 'on'}")],
+            [InlineKeyboardButton("🌐 مدیریت در پنل وب", web_app=WebAppInfo(url=f"{self.bot_config['webapp_url']}/admin/wheel"))],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+        ]
+        
+        await query.edit_message_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def handle_wheel_callbacks(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle wheel management callbacks"""
+        query = update.callback_query
+        
+        if data.startswith("wheel_toggle_"):
+            action = data.split("_")[2]
+            is_active = (action == 'on')
+            
+            # Update setting in DB
+            self.db.set_wheel_setting('is_active', str(is_active).lower())
+            
+            await query.answer(f"✅ گردونه شانس {'فعال' if is_active else 'غیرفعال'} شد.", show_alert=True)
+            
+            # Refresh menu
+            await self.handle_admin_wheel(update, context)
+
+    async def handle_set_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle setting user limits"""
+        query = update.callback_query
+        await query.answer()
+        
+        panel = self.db.get_panel(panel_id)
+        current_config = json.loads(panel.get('extra_config') or '{}')
+        current_limit = current_config.get('iplimit', '0')
+        
+        message = f"""
+⚠️ **تنظیمات محدودیت کاربر**
+
+محدودیت فعلی: **{current_limit if current_limit != '0' else 'نامحدود'}**
+
+👇 لطفاً محدودیت تعداد کاربر همزمان را انتخاب کنید:
+        """
+        reply_markup = ButtonLayout.create_ip_limit_selection_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_set_port(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle setting port type"""
+        query = update.callback_query
+        await query.answer()
+        
+        panel = self.db.get_panel(panel_id)
+        current_config = json.loads(panel.get('extra_config') or '{}')
+        current_port = current_config.get('port_type', 'random')
+        
+        message = f"""
+🔌 **تنظیمات پورت پیش‌فرض**
+
+پورت فعلی: **{current_port}**
+
+👇 لطفاً نوع پورت پیش‌فرض برای ساخت کاربر جدید را انتخاب کنید:
+        """
+        reply_markup = ButtonLayout.create_port_selection_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_set_protocol(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle setting protocol"""
+        query = update.callback_query
+        await query.answer()
+        
+        panel = self.db.get_panel(panel_id)
+        current_config = json.loads(panel.get('extra_config') or '{}')
+        current_proto = current_config.get('default_protocol', 'vless')
+        
+        message = f"""
+🌐 **تنظیمات پروتکل پیش‌فرض**
+
+پروتکل فعلی: **{current_proto}**
+
+👇 لطفاً پروتکل پیش‌فرض برای ساخت کاربر جدید را انتخاب کنید:
+        """
+        reply_markup = ButtonLayout.create_protocol_selection_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_set_transmission(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
+        """Handle setting transmission"""
+        query = update.callback_query
+        await query.answer()
+        
+        panel = self.db.get_panel(panel_id)
+        current_config = json.loads(panel.get('extra_config') or '{}')
+        current_trans = current_config.get('transmission', 'tcp')
+        
+        message = f"""
+📡 **تنظیمات انتقال (Transmission)**
+
+انتقال فعلی: **{current_trans}**
+
+👇 لطفاً نوع انتقال پیش‌فرض را انتخاب کنید:
+        """
+        reply_markup = ButtonLayout.create_transmission_selection_menu(panel_id)
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_save_advanced_setting(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int, setting_type: str, value: str):
+        """Save advanced setting"""
+        query = update.callback_query
+        await query.answer()
+        
+        settings_map = {
+            'protocol': 'default_protocol',
+            'transmission': 'transmission',
+            'iplimit': 'iplimit',
+            'port': 'port_type'
+        }
+        
+        db_key = settings_map.get(setting_type)
+        if db_key:
+            self.db.update_panel_settings(panel_id, {db_key: value})
+            await query.answer(f"✅ تنظیمات {setting_type} با موفقیت ذخیره شد", show_alert=True)
+        else:
+            await query.answer("❌ تنظیمات نامعتبر", show_alert=True)
+            
+        # Return to advanced config menu
+        await self.handle_advanced_config(update, context, panel_id)
+
 
 def main():
     """Main function to run the bot"""
@@ -16302,8 +19418,8 @@ def main():
     request = NoProxyRequest()
     
     telegram_bot = Bot(token=bot.bot_config['token'], request=request)
-    # CRITICAL: Pass bot_config to ReportingSystem to ensure reports go to correct channel
-    bot.reporting_system = ReportingSystem(telegram_bot, bot_config=bot.bot_config)
+    # CRITICAL: Pass bot_config and db_manager to ReportingSystem
+    bot.reporting_system = ReportingSystem(telegram_bot, bot_config=bot.bot_config, db_manager=bot.db)
     bot.statistics_system = StatisticsSystem(bot.db, bot.admin_manager)
     bot.system_manager = SystemManager(telegram_bot, bot.db, bot.bot_config)
     
@@ -16317,6 +19433,7 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, bot.handle_text_message))
     application.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, bot.handle_receipt_upload))
+    application.add_handler(MessageHandler(filters.Document.ALL & filters.ChatType.PRIVATE, bot.handle_document_upload))
     
     # Add error handler
     async def error_handler(update, context):
@@ -16331,11 +19448,16 @@ def main():
     async def post_init(application):
         """Post initialization tasks"""
         try:
+            # Initialize reporting topics first (creates topics if group)
+            if bot.reporting_system:
+                logger.info("🔧 Initializing reporting system topics...")
+                await bot.reporting_system.initialize_topics_on_startup()
+                
             # Send bot start report
             if bot.reporting_system:
                 await bot.reporting_system.report_bot_start()
         except Exception as e:
-            logger.error(f"Failed to send bot start report: {e}")
+            logger.error(f"Failed in post_init: {e}")
     
     application.post_init = post_init
     

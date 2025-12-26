@@ -1,0 +1,134 @@
+{% extends "themes/modern/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div class="header-content">
+        <a href="{{ url_for('tickets') }}" class="back-link">
+            <i class="fas fa-arrow-right"></i>
+            بازگشت
+        </a>
+        <div class="ticket-title-wrapper">
+            <h1 class="page-title">{{ ticket.subject }}</h1>
+            <span class="ticket-id-badge">#{{ ticket.id }}</span>
+        </div>
+        <div class="ticket-badges">
+            <span class="status-badge {{ ticket.status }}">
+                {% if ticket.status == 'open' %}
+                <i class="fas fa-envelope-open"></i> باز
+                {% elif ticket.status == 'closed' %}
+                <i class="fas fa-check-circle"></i> بسته شده
+                {% elif ticket.status == 'answered' %}
+                <i class="fas fa-reply"></i> پاسخ داده شده
+                {% elif ticket.status == 'pending' %}
+                <i class="fas fa-clock"></i> در انتظار
+                {% else %}
+                {{ ticket.status }}
+                {% endif %}
+            </span>
+            {% if ticket.priority %}
+            <span class="priority-badge {{ ticket.priority }}">
+                {% if ticket.priority == 'high' %}
+                <i class="fas fa-exclamation-circle"></i> اولویت بالا
+                {% elif ticket.priority == 'medium' or ticket.priority == 'normal' %}
+                <i class="fas fa-info-circle"></i> اولویت معمولی
+                {% elif ticket.priority == 'low' %}
+                <i class="fas fa-arrow-down"></i> اولویت پایین
+                {% endif %}
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="chat-layout">
+    <div class="chat-container glass-card">
+        <div class="chat-messages" id="chatMessages">
+            <!-- Initial Ticket Message -->
+            <div class="message-bubble user-message">
+                <div class="message-avatar">
+                    {% if photo_url %}
+                    <img src="{{ photo_url }}" alt="User">
+                    {% else %}
+                    <div class="avatar-placeholder">{{ user.first_name[:1] }}</div>
+                    {% endif %}
+                </div>
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-author">شما</span>
+                        <span class="message-time">{{ ticket.created_at|replace('T', ' ')|truncate(16, True, '')
+                            }}</span>
+                    </div>
+                    <div class="message-text">
+                        {{ ticket.message }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Replies -->
+            {% for reply in replies %}
+            <div class="message-bubble {{ 'admin-message' if reply.is_admin else 'user-message' }}">
+                <div class="message-avatar">
+                    {% if reply.is_admin %}
+                    <div class="avatar-placeholder admin">
+                        <i class="fas fa-headset"></i>
+                    </div>
+                    {% else %}
+                    {% if photo_url %}
+                    <img src="{{ photo_url }}" alt="User">
+                    {% else %}
+                    <div class="avatar-placeholder">{{ user.first_name[:1] }}</div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-author">{{ 'پشتیبانی' if reply.is_admin else 'شما' }}</span>
+                        <span class="message-time">{{ reply.created_at|replace('T', ' ')|truncate(16, True, '')
+                            }}</span>
+                    </div>
+                    <div class="message-text">
+                        {{ reply.message }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if ticket.status != 'closed' %}
+        <div class="chat-input-area">
+            <form method="POST" action="{{ url_for('ticket_detail', ticket_id=ticket.id) }}" class="reply-form">
+                <div class="input-wrapper">
+                    <textarea name="message" class="chat-input" placeholder="پاسخ خود را بنویسید..." rows="1"
+                        required></textarea>
+                    <button type="submit" class="send-btn ripple">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% else %}
+        <div class="chat-closed-notice">
+            <i class="fas fa-lock"></i>
+            این تیکت بسته شده است و امکان ارسال پاسخ وجود ندارد.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    // Auto-scroll to bottom of chat
+    document.addEventListener('DOMContentLoaded', function () {
+        const chatMessages = document.getElementById('chatMessages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Auto-resize textarea
+        const textarea = document.querySelector('.chat-input');
+        if (textarea) {
+            textarea.addEventListener('input', function () {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+        }
+    });
+</script>
+{% endblock %}

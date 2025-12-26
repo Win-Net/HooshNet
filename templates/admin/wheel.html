@@ -1,0 +1,392 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}تنظیمات گردونه شانس{% endblock %}
+{% block page_subtitle %}مدیریت جوایز و تنظیمات گردونه{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Settings Section -->
+    <div class="card" style="margin-bottom: var(--sp-xl);">
+        <div class="card-header">
+            <div class="card-title">
+                <i class="fas fa-cogs"></i>
+                تنظیمات عمومی
+            </div>
+        </div>
+        <div class="card-body">
+            <form id="settingsForm" class="grid-2">
+                <div class="form-group">
+                    <label class="form-label">وضعیت گردونه</label>
+                    <select class="form-control" id="is_active">
+                        <option value="true">فعال</option>
+                        <option value="false">غیرفعال</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">هزینه هر چرخش (تومان)</label>
+                    <input type="number" class="form-control" id="spin_cost" value="0">
+                    <div class="form-text">0 برای رایگان</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">محدودیت چرخش روزانه</label>
+                    <input type="number" class="form-control" id="daily_limit" value="1">
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-save"></i> ذخیره تنظیمات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Prizes Section -->
+    <div class="card">
+        <div class="card-header" style="justify-content: space-between;">
+            <div class="card-title">
+                <i class="fas fa-gift"></i>
+                لیست جوایز
+            </div>
+            <button class="btn btn-success btn-sm" onclick="openAddModal()">
+                <i class="fas fa-plus"></i> افزودن جایزه
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ترتیب</th>
+                        <th>نام جایزه</th>
+                        <th>نوع</th>
+                        <th>مقدار</th>
+                        <th>شانس (%)</th>
+                        <th>وضعیت</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="prizesTableBody">
+                    <!-- Prizes will be loaded here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="prizeModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3 class="modal-title" id="modalTitle">افزودن جایزه</h3>
+            <button class="btn-icon" onclick="closeModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="prizeForm">
+                <input type="hidden" id="prize_id">
+                <div class="form-group">
+                    <label class="form-label">نام جایزه</label>
+                    <input type="text" class="form-control" id="prize_name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">نوع جایزه</label>
+                    <select class="form-control" id="prize_type" onchange="toggleValueInput()">
+                        <option value="balance">اعتبار کیف پول</option>
+                        <option value="discount">کد تخفیف</option>
+                        <option value="volume">حجم اضافه</option>
+                        <option value="time">زمان اضافه</option>
+                        <option value="empty">پوچ</option>
+                    </select>
+                </div>
+                <div class="form-group" id="valueGroup">
+                    <label class="form-label">مقدار</label>
+                    <input type="number" class="form-control" id="prize_value" step="0.01">
+                    <div class="form-text" id="valueHelp">مقدار اعتبار به تومان</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">شاس برنده شدن (%)</label>
+                    <input type="number" class="form-control" id="prize_probability" step="0.1" min="0" max="100"
+                        required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">ترتیب نمایش</label>
+                    <input type="number" class="form-control" id="prize_order" value="0">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="prize_active" checked>
+                        <span>فعال باشد</span>
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">انصراف</button>
+            <button class="btn btn-primary" onclick="savePrize()">ذخیره</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: var(--p-bg-card);
+        border-radius: var(--radius-lg);
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        border: 1px solid var(--p-border);
+    }
+
+    .modal-header {
+        padding: var(--sp-lg);
+        border-bottom: 1px solid var(--p-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-body {
+        padding: var(--sp-lg);
+    }
+
+    .modal-footer {
+        padding: var(--sp-lg);
+        border-top: 1px solid var(--p-border);
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--sp-md);
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Load data on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSettings();
+        loadPrizes();
+    });
+
+    // Settings Functions
+    async function loadSettings() {
+        try {
+            const response = await fetch('/api/admin/wheel/settings');
+            const data = await response.json();
+            if (data.success) {
+                const s = data.settings;
+                document.getElementById('is_active').value = s.is_active || 'true';
+                document.getElementById('spin_cost').value = s.spin_cost || 0;
+                document.getElementById('daily_limit').value = s.daily_limit || 1;
+            }
+        } catch (error) {
+            console.error('Error loading settings:', error);
+            showToast('خطا در بارگذاری تنظیمات', 'error');
+        }
+    }
+
+    document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const settings = {
+            is_active: document.getElementById('is_active').value,
+            spin_cost: document.getElementById('spin_cost').value,
+            daily_limit: document.getElementById('daily_limit').value
+        };
+
+        try {
+            const response = await fetch('/api/admin/wheel/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+            } else {
+                showToast(data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            showToast('خطا در ذخیره تنظیمات', 'error');
+        }
+    });
+
+    // Prize Functions
+    async function loadPrizes() {
+        try {
+            const response = await fetch('/api/admin/wheel/prizes');
+            const data = await response.json();
+            if (data.success) {
+                renderPrizes(data.prizes);
+            }
+        } catch (error) {
+            console.error('Error loading prizes:', error);
+        }
+    }
+
+    function renderPrizes(prizes) {
+        const tbody = document.getElementById('prizesTableBody');
+        tbody.innerHTML = '';
+
+        prizes.forEach(prize => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${prize.display_order}</td>
+                <td>${prize.name}</td>
+                <td>${getTypeLabel(prize.type)}</td>
+                <td>${formatValue(prize.type, prize.value)}</td>
+                <td>${prize.probability}%</td>
+                <td>
+                    <span class="badge ${prize.is_active ? 'badge-success' : 'badge-danger'}">
+                        ${prize.is_active ? 'فعال' : 'غیرفعال'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn-icon" onclick='editPrize(${JSON.stringify(prize)})'>
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn-icon text-danger" onclick="deletePrize(${prize.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function getTypeLabel(type) {
+        const types = {
+            'balance': 'اعتبار',
+            'discount': 'تخفیف',
+            'volume': 'حجم',
+            'time': 'زمان',
+            'empty': 'پوچ'
+        };
+        return types[type] || type;
+    }
+
+    function formatValue(type, value) {
+        if (type === 'empty') return '-';
+        if (type === 'balance') return Number(value).toLocaleString() + ' تومان';
+        if (type === 'volume') return value + ' GB';
+        if (type === 'time') return value + ' روز';
+        if (type === 'discount') return value + '%';
+        return value;
+    }
+
+    // Modal Functions
+    function openAddModal() {
+        document.getElementById('prizeForm').reset();
+        document.getElementById('prize_id').value = '';
+        document.getElementById('modalTitle').innerText = 'افزودن جایزه';
+        document.getElementById('prizeModal').classList.add('active');
+        toggleValueInput();
+    }
+
+    function editPrize(prize) {
+        document.getElementById('prize_id').value = prize.id;
+        document.getElementById('prize_name').value = prize.name;
+        document.getElementById('prize_type').value = prize.type;
+        document.getElementById('prize_value').value = prize.value;
+        document.getElementById('prize_probability').value = prize.probability;
+        document.getElementById('prize_order').value = prize.display_order;
+        document.getElementById('prize_active').checked = prize.is_active;
+
+        document.getElementById('modalTitle').innerText = 'ویرایش جایزه';
+        document.getElementById('prizeModal').classList.add('active');
+        toggleValueInput();
+    }
+
+    function closeModal() {
+        document.getElementById('prizeModal').classList.remove('active');
+    }
+
+    function toggleValueInput() {
+        const type = document.getElementById('prize_type').value;
+        const group = document.getElementById('valueGroup');
+        const help = document.getElementById('valueHelp');
+
+        if (type === 'empty') {
+            group.style.display = 'none';
+        } else {
+            group.style.display = 'block';
+            if (type === 'balance') help.innerText = 'مقدار اعتبار به تومان';
+            if (type === 'discount') help.innerText = 'درصد تخفیف (0-100)';
+            if (type === 'volume') help.innerText = 'حجم به گیگابایت';
+            if (type === 'time') help.innerText = 'زمان به روز';
+        }
+    }
+
+    async function savePrize() {
+        const id = document.getElementById('prize_id').value;
+        const data = {
+            name: document.getElementById('prize_name').value,
+            type: document.getElementById('prize_type').value,
+            value: document.getElementById('prize_value').value,
+            probability: document.getElementById('prize_probability').value,
+            display_order: document.getElementById('prize_order').value,
+            is_active: document.getElementById('prize_active').checked
+        };
+
+        const url = id ? `/api/admin/wheel/prizes/${id}` : '/api/admin/wheel/prizes';
+        const method = id ? 'PUT' : 'POST';
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                showToast(result.message, 'success');
+                closeModal();
+                loadPrizes();
+            } else {
+                showToast(result.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error saving prize:', error);
+            showToast('خطا در ذخیره جایزه', 'error');
+        }
+    }
+
+    async function deletePrize(id) {
+        if (!confirm('آیا از حذف این جایزه اطمینان دارید؟')) return;
+
+        try {
+            const response = await fetch(`/api/admin/wheel/prizes/${id}`, {
+                method: 'DELETE'
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadPrizes();
+            } else {
+                showToast(result.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting prize:', error);
+            showToast('خطا در حذف جایزه', 'error');
+        }
+    }
+</script>
+{% endblock %}

@@ -353,6 +353,12 @@ class ProfessionalButtonLayout:
             KeyboardButton("💰 موجودی")
         ])
         
+        # New Features Row (2 columns)
+        keyboard.append([
+            KeyboardButton("🎰 گردونه شانس"),
+            KeyboardButton("📥 دانلود برنامه")
+        ])
+        
         # Quick actions row (2 columns)
         keyboard.append([
             KeyboardButton("🎁 دعوت دوستان"),
@@ -610,81 +616,101 @@ class ProfessionalButtonLayout:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def create_admin_panel(webapp_url: str = None, bot_name: str = None) -> InlineKeyboardMarkup:
-        """Create professional admin panel
+    @staticmethod
+    def create_admin_panel(webapp_url: str = None, bot_name: str = None, admin_role=None) -> InlineKeyboardMarkup:
+        """Create professional admin panel with role-based access
         
         Args:
-            webapp_url: Base URL for webapp (e.g., https://astonnetwork.xyz)
-            bot_name: Bot name for route prefix (e.g., 'unlim' or 'AzadJooNet')
+            webapp_url: Base URL for webapp
+            bot_name: Bot name for route prefix
+            admin_role: AdminRole enum value (default: ADMIN)
         """
+        from admin_roles import AdminRole
+        
+        # Default to ADMIN if no role provided (backward compatibility)
+        if admin_role is None:
+            admin_role = AdminRole.ADMIN
+            
         keyboard = []
         
         # Web App (if URL provided) - Full width for prominence
-        # Using WebAppInfo for direct integration
         if not webapp_url:
             import os
-            # Priority: 1. BOT_WEBAPP_URL (domain), 2. database (ngrok)
             webapp_url = os.getenv('BOT_WEBAPP_URL') or get_webapp_url()
         
         if webapp_url:
-            # Add bot_name prefix to webapp URL if provided
             base_url = webapp_url.rstrip('/')
-            if bot_name:
-                user_webapp_url = f"{base_url}/{bot_name}"
-            else:
-                user_webapp_url = base_url
+            user_webapp_url = f"{base_url}/{bot_name}" if bot_name else base_url
             
-            keyboard.append([
-                InlineKeyboardButton(
-                    "🌐 ورود به وب اپلیکیشن",
-                    web_app=WebAppInfo(url=user_webapp_url)
-                )
-            ])
-            # Add web admin panel button with bot_name prefix
-            if bot_name:
-                admin_webapp_url = f"{base_url}/{bot_name}/admin/login"
-            else:
-                admin_webapp_url = f"{base_url}/admin/login"
-            keyboard.append([
-                InlineKeyboardButton(
-                    "👑 ورود به پنل مدیریت وب",
-                    web_app=WebAppInfo(url=admin_webapp_url)
-                )
-            ])
+            # Admin Web Panel - Only for ADMIN and SELLER
+            if admin_role in [AdminRole.ADMIN, AdminRole.SELLER]:
+                admin_webapp_url = f"{base_url}/{bot_name}/admin/login" if bot_name else f"{base_url}/admin/login"
+                keyboard.append([
+                    InlineKeyboardButton(
+                        "👑 ورود به پنل مدیریت وب (پیشرفته)",
+                        web_app=WebAppInfo(url=admin_webapp_url)
+                    )
+                ])
         
         # --- Core Management Section ---
-        # Grouping core entities: Users, Panels, Products
-        keyboard.append([
-            InlineKeyboardButton("👥 مدیریت کاربران", callback_data="manage_users"),
-            InlineKeyboardButton("🖥️ مدیریت پنل‌ها", callback_data="manage_panels")
-        ])
-        keyboard.append([
-            InlineKeyboardButton("🤝 پنل نمایندگان", web_app=WebAppInfo(url=f"{webapp_url}/reseller/dashboard" if webapp_url else "/reseller/dashboard"))
-        ])
-        keyboard.append([
-            InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products")
-        ])
+        # Users & Panels
+        core_row = []
+        if admin_role in [AdminRole.ADMIN, AdminRole.SELLER, AdminRole.SUPPORT]:
+            core_row.append(InlineKeyboardButton("👥 مدیریت کاربران", callback_data="manage_users"))
+        if admin_role in [AdminRole.ADMIN, AdminRole.SELLER]:
+            core_row.append(InlineKeyboardButton("🖥️ مدیریت پنل‌ها", callback_data="manage_panels"))
+        if core_row:
+            keyboard.append(core_row)
 
-        # --- Financial & System Section ---
-        # Grouping financial and system stats
-        keyboard.append([
-            InlineKeyboardButton("💰 مدیریت مالی", callback_data="financial_management"),
-            InlineKeyboardButton("📊 آمار و گزارشات", callback_data="admin_stats")
-        ])
+        # Products & Resellers
+        prod_row = []
+        if admin_role in [AdminRole.ADMIN, AdminRole.SELLER]:
+            prod_row.append(InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products"))
+            prod_row.append(InlineKeyboardButton("🤝 پنل نمایندگان", web_app=WebAppInfo(url=f"{webapp_url}/reseller/dashboard" if webapp_url else "/reseller/dashboard")))
+        if prod_row:
+            keyboard.append(prod_row)
 
-        # --- Settings & Logs Section ---
-        # Grouping configuration and logs
-        keyboard.append([
-            InlineKeyboardButton("⚙️ تنظیمات سیستم", callback_data="system_settings"),
-            InlineKeyboardButton("🤖 تنظیمات اطلاعات ربات", callback_data="bot_info_settings")
-        ])
-        keyboard.append([
-            InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="system_logs")
-        ])
+        # --- Financial & Statistics Section ---
+        fin_row = []
+        if admin_role in [AdminRole.ADMIN, AdminRole.SELLER]:
+            fin_row.append(InlineKeyboardButton("💰 مدیریت مالی", callback_data="financial_management"))
+            fin_row.append(InlineKeyboardButton("📊 آمار و گزارشات", callback_data="admin_stats"))
+        if fin_row:
+            keyboard.append(fin_row)
+
+        # --- Advanced Features Section ---
+        # Wheel & Channels
+        adv_row = []
+        if admin_role == AdminRole.ADMIN:
+            adv_row.append(InlineKeyboardButton("🎰 گردونه شانس", callback_data="admin_wheel"))
+        if admin_role in [AdminRole.ADMIN, AdminRole.SELLER]:
+            adv_row.append(InlineKeyboardButton("📢 کانال‌های اجباری", callback_data="admin_channels"))
+        if adv_row:
+            keyboard.append(adv_row)
+
+        # Export & Admins
+        sys_row = []
+        if admin_role in [AdminRole.ADMIN, AdminRole.SELLER]:
+            sys_row.append(InlineKeyboardButton("📤 خروجی اطلاعات", callback_data="admin_export"))
+        if admin_role == AdminRole.ADMIN:
+            sys_row.append(InlineKeyboardButton("👑 مدیریت ادمین‌ها", callback_data="admin_roles"))
+        if sys_row:
+            keyboard.append(sys_row)
+
+        # --- System Settings Section (Admin Only) ---
+        if admin_role == AdminRole.ADMIN:
+            keyboard.append([
+                InlineKeyboardButton("⚙️ تنظیمات سیستم", callback_data="system_settings"),
+                InlineKeyboardButton("🤖 تنظیمات ربات", callback_data="bot_info_settings")
+            ])
+            keyboard.append([
+                InlineKeyboardButton("📋 مشاهده لاگ‌های سیستم", callback_data="system_logs"),
+                InlineKeyboardButton("💾 بکاپ و رستور", callback_data="admin_backup")
+            ])
         
         # --- Navigation ---
         keyboard.append([InlineKeyboardButton(
-            "🔙 بازگشت به منو اصلی",
+            "🏠 بازگشت به منو اصلی",
             callback_data="main_menu"
         )])
         
@@ -812,9 +838,10 @@ class ProfessionalButtonLayout:
                 InlineKeyboardButton("💾 بکاپ دیتابیس", callback_data="sys_backup"),
                 InlineKeyboardButton("📊 وضعیت سیستم", callback_data="sys_status")
             ],
-            # Row 2: Logs
+            # Row 2: Logs & Topics
             [
-                InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="sys_logs")
+                InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="sys_logs"),
+                InlineKeyboardButton("🔄 بروزرسانی تاپیک‌ها", callback_data="sys_topics")
             ],
             # Row 3: Restart (Full width for safety)
             [
@@ -1014,8 +1041,124 @@ class ProfessionalButtonLayout:
                 InlineKeyboardButton("🟣 Rebecca", callback_data="panel_type_rebecca"),
                 InlineKeyboardButton("🟠 Pasarguard", callback_data="panel_type_pasargad")
             ],
-            [InlineKeyboardButton("🛡️ Marzneshin", callback_data="panel_type_marzneshin")],
+            [
+                InlineKeyboardButton("🛡️ Marzneshin", callback_data="panel_type_marzneshin"),
+                InlineKeyboardButton("🔰 Guard", callback_data="panel_type_guard")
+            ],
             [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_panel_settings_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create enhanced panel settings menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✏️ ویرایش مشخصات", callback_data=f"edit_panel_{panel_id}"),
+                InlineKeyboardButton("🔗 مدیریت اینباندها", callback_data=f"manage_panel_inbounds_{panel_id}")
+            ],
+            [
+                InlineKeyboardButton("📝 تنظیمات نام‌گذاری", callback_data=f"naming_settings_{panel_id}"),
+                InlineKeyboardButton("📡 تست اتصال", callback_data=f"test_panel_{panel_id}")
+            ],
+            [
+                InlineKeyboardButton("📊 وضعیت سیستم", callback_data=f"panel_stats_{panel_id}"),
+                InlineKeyboardButton("💾 بکاپ‌گیری", callback_data=f"backup_panel_{panel_id}")
+            ],
+            [
+                InlineKeyboardButton("🗑️ حذف پنل", callback_data=f"delete_panel_{panel_id}")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="manage_panels")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_naming_settings_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create naming settings menu with all 8 methods"""
+        keyboard = [
+            [InlineKeyboardButton("📝 نام کاربری + ترتیبی", callback_data=f"set_naming_{panel_id}_1")],
+            [InlineKeyboardButton("🔢 آیدی عددی + رندوم", callback_data=f"set_naming_{panel_id}_2")],
+            [InlineKeyboardButton("✏️ نام دلخواه کاربر", callback_data=f"set_naming_{panel_id}_3")],
+            [InlineKeyboardButton("🎲 نام دلخواه + رندوم", callback_data=f"set_naming_{panel_id}_4")],
+            [InlineKeyboardButton("👤 متن ادمین + رندوم", callback_data=f"set_naming_{panel_id}_5")],
+            [InlineKeyboardButton("📊 متن ادمین + ترتیبی", callback_data=f"set_naming_{panel_id}_6")],
+            [InlineKeyboardButton("🔗 آیدی + ترتیبی", callback_data=f"set_naming_{panel_id}_7")],
+            [InlineKeyboardButton("💼 متن نماینده + ترتیبی", callback_data=f"set_naming_{panel_id}_8")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"panel_settings_{panel_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_advanced_config_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create advanced configuration menu"""
+        keyboard = [
+            [InlineKeyboardButton("🔌 تنظیم پورت پیش‌فرض", callback_data=f"set_port_{panel_id}")],
+            [InlineKeyboardButton("🌐 پروتکل پیش‌فرض", callback_data=f"set_protocol_{panel_id}")],
+            [InlineKeyboardButton("📡 تنظیمات انتقال (Transmission)", callback_data=f"set_transmission_{panel_id}")],
+            [InlineKeyboardButton("⚠️ محدودیت‌های کاربر", callback_data=f"set_limits_{panel_id}")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"panel_settings_{panel_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_protocol_selection_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create protocol selection menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("VLESS", callback_data=f"save_adv_setting_{panel_id}_protocol_vless"),
+                InlineKeyboardButton("VMESS", callback_data=f"save_adv_setting_{panel_id}_protocol_vmess")
+            ],
+            [
+                InlineKeyboardButton("Trojan", callback_data=f"save_adv_setting_{panel_id}_protocol_trojan"),
+                InlineKeyboardButton("Shadowsocks", callback_data=f"save_adv_setting_{panel_id}_protocol_shadowsocks")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"adv_config_{panel_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_transmission_selection_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create transmission selection menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("TCP", callback_data=f"save_adv_setting_{panel_id}_transmission_tcp"),
+                InlineKeyboardButton("WebSocket", callback_data=f"save_adv_setting_{panel_id}_transmission_ws")
+            ],
+            [
+                InlineKeyboardButton("gRPC", callback_data=f"save_adv_setting_{panel_id}_transmission_grpc"),
+                InlineKeyboardButton("HTTPUpgrade", callback_data=f"save_adv_setting_{panel_id}_transmission_httpupgrade")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"adv_config_{panel_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_ip_limit_selection_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create IP limit selection menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("1 کاربره", callback_data=f"save_adv_setting_{panel_id}_iplimit_1"),
+                InlineKeyboardButton("2 کاربره", callback_data=f"save_adv_setting_{panel_id}_iplimit_2")
+            ],
+            [
+                InlineKeyboardButton("3 کاربره", callback_data=f"save_adv_setting_{panel_id}_iplimit_3"),
+                InlineKeyboardButton("نامحدود", callback_data=f"save_adv_setting_{panel_id}_iplimit_0")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"adv_config_{panel_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_port_selection_menu(panel_id: int) -> InlineKeyboardMarkup:
+        """Create port selection menu"""
+        keyboard = [
+            [InlineKeyboardButton("🎲 تصادفی (Random)", callback_data=f"save_adv_setting_{panel_id}_port_random")],
+            [
+                InlineKeyboardButton("443", callback_data=f"save_adv_setting_{panel_id}_port_443"),
+                InlineKeyboardButton("80", callback_data=f"save_adv_setting_{panel_id}_port_80"),
+                InlineKeyboardButton("2053", callback_data=f"save_adv_setting_{panel_id}_port_2053")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"adv_config_{panel_id}")]
         ]
         return InlineKeyboardMarkup(keyboard)
 

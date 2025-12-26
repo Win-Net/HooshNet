@@ -984,7 +984,7 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ذخیره...';
 
         try {
-            await apiCall('/api/admin/menu-layout/save', {
+            await apiCall('/api/admin/menu-layout', {
                 method: 'POST',
                 body: JSON.stringify({ buttons: buttons })
             });

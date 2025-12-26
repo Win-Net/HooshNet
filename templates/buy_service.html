@@ -163,6 +163,19 @@
     <!-- Step 3: Payment -->
     <div class="form-step fade-in-up" id="step3" style="display: none;">
 
+        <!-- Custom Name Input (Conditional) -->
+        <div id="customNameContainer" style="display: none; margin-bottom: 20px; padding: 0 20px;">
+            <h3 style="margin-bottom: 10px; font-size: 1.1rem;">نام اختصاصی سرویس</h3>
+            <div class="custom-input-group"
+                style="display: flex; flex-direction: column; align-items: stretch; gap: 8px;">
+                <input type="text" id="customName" placeholder="نام دلخواه (انگلیسی و اعداد، ۳-۲۰ کاراکتر)"
+                    style="width: 100%; text-align: left; direction: ltr; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: white;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary);">
+                    فقط حروف انگلیسی، اعداد، خط تیره (-) و زیرخط (_) مجاز است.
+                </div>
+            </div>
+        </div>
+
         <div class="invoice-card">
             <div class="invoice-row">
                 <span class="invoice-label">سرویس</span>
@@ -440,7 +453,9 @@
         // Store original price per GB for calculation
         selectedPanel.original_price_per_gb = panel.original_price_per_gb || pricePerGB;
         selectedPanel.discount_rate = panel.discount_rate || 0;
+        selectedPanel.discount_rate = panel.discount_rate || 0;
         selectedPanel.is_discounted = panel.is_discounted || false;
+        selectedPanel.naming_method = panel.naming_method || 2;
 
         if (renewServiceId && renewPanelId && panel.id !== renewPanelId) {
             renewServiceId = null;
@@ -681,6 +696,14 @@
 
         // Update payment options when price changes
         updatePaymentOptions();
+
+        // Show/hide custom name input
+        const customNameContainer = document.getElementById('customNameContainer');
+        if (selectedPanel && (selectedPanel.naming_method === 3 || selectedPanel.naming_method === 4)) {
+            customNameContainer.style.display = 'block';
+        } else {
+            customNameContainer.style.display = 'none';
+        }
     }
 
     // Load user balance on page load
@@ -838,6 +861,16 @@
         const paymentMethod = selectedPaymentMethod || 'card';
         const finalPrice = appliedDiscountCode ? appliedDiscountCode.final_amount : originalPrice;
 
+        // Validate Custom Name
+        let customName = null;
+        if (selectedPanel.naming_method === 3 || selectedPanel.naming_method === 4) {
+            customName = document.getElementById('customName').value.trim();
+            if (!customName) return showToast('لطفاً نام اختصاصی سرویس را وارد کنید', 'error');
+            if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{2,19}$/.test(customName)) {
+                return showToast('نام اختصاصی نامعتبر است (۳-۲۰ کاراکتر، حروف و اعداد)', 'error');
+            }
+        }
+
         // Validate payment method
         if (paymentMethod === 'balance') {
             if (userBalance < finalPrice) {
@@ -863,6 +896,7 @@
                 payment_method: paymentMethod,
                 purchase_type: purchaseType,
                 discount_code: appliedDiscountCode ? appliedDiscountCode.code : null,
+                custom_name: customName,
                 ...(renewServiceId && { renew_service_id: renewServiceId, renew_panel_id: renewPanelId }),
                 ...(purchaseType === 'plan' ? { product_id: selectedProduct.id } : { volume_gb: selectedVolume.gb })
             };

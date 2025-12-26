@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>سرویس‌های من - پنل کاربری</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='themes/modern/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <!-- Mobile Header -->
+        <header class="mobile-header">
+            <div class="brand">
+                <span>هوش</span>نت
+            </div>
+            <div class="user-avatar-sm">
+                {{ user.first_name[0] if user.first_name else 'U' }}
+            </div>
+        </header>
+
+        <!-- Desktop Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand brand">
+                <div style="font-size: 1.5rem;"><span>هوش</span>نت</div>
+            </div>
+            <nav class="nav-list">
+                <a href="{{ add_bot_prefix('/dashboard') }}" class="nav-item">
+                    <span class="nav-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                    </span>
+                    <span>داشبورد</span>
+                </a>
+                <a href="{{ add_bot_prefix('/services') }}" class="nav-item active">
+                    <span class="nav-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </span>
+                    <span>سرویس‌ها</span>
+                </a>
+                <a href="{{ add_bot_prefix('/transactions') }}" class="nav-item">
+                    <span class="nav-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                            <polyline points="13 2 13 9 20 9"></polyline>
+                        </svg>
+                    </span>
+                    <span>تراکنش‌ها</span>
+                </a>
+                <a href="{{ add_bot_prefix('/tickets') }}" class="nav-item">
+                    <span class="nav-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </span>
+                    <span>پشتیبانی</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+            <!-- Page Header -->
+            <div class="page-header fade-in">
+                <h1 class="page-title">سرویس‌های من</h1>
+                <div class="header-actions">
+                    <div class="search-box">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input type="text" id="serviceSearch" placeholder="جستجو در سرویس‌ها..."
+                            onkeyup="filterServices()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters-scroll fade-in delay-1">
+                <button class="filter-chip active" onclick="setFilter('all', this)">همه</button>
+                <button class="filter-chip" onclick="setFilter('online', this)">آنلاین</button>
+                <button class="filter-chip" onclick="setFilter('offline', this)">آفلاین</button>
+                <button class="filter-chip" onclick="setFilter('expiring', this)">در حال انقضا</button>
+            </div>
+
+            <!-- Services Grid -->
+            <div class="services-grid fade-in delay-2" id="servicesGrid">
+                {% if services %}
+                {% for service in services %}
+                <div class="service-card-detailed" data-name="{{ service.client_name or service.id }}"
+                    data-status="{% if service.is_online %}online{% else %}offline{% endif %}"
+                    data-expiring="{% if service.remaining_days and service.remaining_days < 3 %}true{% else %}false{% endif %}">
+
+                    <div class="card-header-detailed">
+                        <div class="service-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            </svg>
+                        </div>
+                        <div class="service-info-main">
+                            <div class="service-title">{{ service.client_name or 'سرویس شخصی' }}</div>
+                            <div class="service-subtitle">#{{ service.id }} • {{ service.protocol|upper if
+                                service.protocol else 'VLESS' }}</div>
+                        </div>
+                        <div
+                            class="status-badge-lg {% if service.is_online %}status-active{% else %}status-inactive{% endif %}">
+                            <span class="pulse-dot"></span>
+                            {% if service.is_online %}آنلاین{% else %}آفلاین{% endif %}
+                        </div>
+                    </div>
+
+                    <div class="card-body-detailed">
+                        <div class="usage-stats">
+                            <div class="stat-row">
+                                <span>مصرف شده</span>
+                                <span class="stat-val">{{ service.used_gb|default(0)|round(2) }}
+                                    <small>GB</small></span>
+                            </div>
+                            <div class="stat-row">
+                                <span>کل حجم</span>
+                                <span class="stat-val">{{ service.total_gb }} <small>GB</small></span>
+                            </div>
+                        </div>
+
+                        {% set percentage = service.usage_percentage|default(0)|int %}
+                        <div class="progress-container-lg">
+                            <div class="progress-bar"
+                                style="width: {{ percentage }}%; {% if percentage > 90 %}background: var(--c-danger);{% endif %}">
+                            </div>
+                        </div>
+
+                        <div class="expiry-info">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            {% if service.remaining_days is not none %}
+                            <span>{{ service.remaining_days }} روز باقی‌مانده</span>
+                            {% else %}
+                            <span>نامحدود</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="card-footer-detailed">
+                        <button class="btn-icon" onclick="copyLink('{{ service.subscription_link }}')" title="کپی لینک">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                        <a href="{{ add_bot_prefix('/services/' + service.id|string) }}" class="btn-full">
+                            مدیریت سرویس
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <h3>سرویسی یافت نشد</h3>
+                    <p>شما هنوز هیچ سرویس فعالی ندارید.</p>
+                    <a href="{{ add_bot_prefix('/buy-service') }}" class="btn btn-primary"
+                        style="margin-top: 20px;">خرید سرویس جدید</a>
+                </div>
+                {% endif %}
+            </div>
+
+        </main>
+
+        <!-- Bottom Navigation (Mobile Only) -->
+        <nav class="bottom-nav">
+            <a href="{{ add_bot_prefix('/dashboard') }}" class="bottom-nav-item">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span>داشبورد</span>
+            </a>
+            <a href="{{ add_bot_prefix('/services') }}" class="bottom-nav-item active">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                <span>سرویس‌ها</span>
+            </a>
+            <div class="fab-wrapper">
+                <a href="{{ add_bot_prefix('/buy-service') }}" class="fab">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </a>
+            </div>
+            <a href="{{ add_bot_prefix('/transactions') }}" class="bottom-nav-item">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                    <polyline points="13 2 13 9 20 9"></polyline>
+                </svg>
+                <span>تراکنش</span>
+            </a>
+            <a href="{{ add_bot_prefix('/tickets') }}" class="bottom-nav-item">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <span>پشتیبانی</span>
+            </a>
+        </nav>
+
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"
+        style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 10px; width: 90%; max-width: 400px;">
+    </div>
+
+    <script src="{{ url_for('static', filename='themes/modern/script.js') }}"></script>
+    <script>
+        // Filter Logic
+        let currentFilter = 'all';
+
+        function setFilter(filter, btn) {
+            currentFilter = filter;
+
+            // Update buttons
+            document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            filterServices();
+        }
+
+        function filterServices() {
+            const searchTerm = document.getElementById('serviceSearch').value.toLowerCase();
+            const cards = document.querySelectorAll('.service-card-detailed');
+            let hasVisible = false;
+
+            cards.forEach(card => {
+                const name = card.dataset.name.toLowerCase();
+                const status = card.dataset.status;
+                const expiring = card.dataset.expiring === 'true';
+
+                let matchesSearch = name.includes(searchTerm);
+                let matchesFilter = true;
+
+                if (currentFilter === 'online' && status !== 'online') matchesFilter = false;
+                if (currentFilter === 'offline' && status !== 'offline') matchesFilter = false;
+                if (currentFilter === 'expiring' && !expiring) matchesFilter = false;
+
+                if (matchesSearch && matchesFilter) {
+                    card.style.display = 'flex';
+                    hasVisible = true;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            // Show/Hide empty state if needed (can be improved)
+        }
+    </script>
+</body>
+
+</html>

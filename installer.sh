@@ -70,9 +70,9 @@ while [[ ! "$ADMIN_ID" =~ ^[0-9]+$ ]]; do
 done
 
 read -p "Enter Bot Username (without @): " BOT_USERNAME
-read -p "Enter Channel ID (e.g., @MyChannel): " CHANNEL_ID
-read -p "Enter Channel Link (e.g., https://t.me/MyChannel): " CHANNEL_LINK
-read -p "Enter Reports Channel ID (numeric, optional, press Enter to skip): " REPORTS_CHANNEL_ID
+CHANNEL_ID=""
+CHANNEL_LINK=""
+read -p "Enter Reports Group ID (numeric, optional, press Enter to skip): " REPORTS_CHANNEL_ID
 REPORTS_CHANNEL_ID=${REPORTS_CHANNEL_ID:-0}
 
 read -p "Enter Receipts Channel ID (numeric, optional - press Enter to skip): " RECEIPTS_CHANNEL_ID

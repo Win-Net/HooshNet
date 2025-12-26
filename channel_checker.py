@@ -10,13 +10,19 @@ from telegram.ext import ContextTypes
 from telegram.error import TelegramError, BadRequest, Forbidden
 from config import BOT_CONFIG
 from message_templates import MessageTemplates
+from channel_manager import channel_manager
+from professional_database import ProfessionalDatabaseManager
 
 logger = logging.getLogger(__name__)
+
+# Initialize database for channel manager
+db = ProfessionalDatabaseManager()
+channel_manager.set_database(db)
 
 
 async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE, bot_config=None) -> bool:
     """
-    Check if user is member of required channel
+    Check if user is member of required channels
     
     Args:
         update: Telegram update
@@ -38,87 +44,115 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
         if user_id == bot_config['admin_id']:
             return True
         
-        channel_id = bot_config.get('channel_id')
-        if not channel_id:
-            # No channel configured, allow access
+        # Get required channels
+        channels = channel_manager.get_required_channels()
+        
+        # Also check config channel for backward compatibility
+        config_channel_id = bot_config.get('channel_id')
+        if config_channel_id:
+             # Normalize channel_id
+            if isinstance(config_channel_id, str) and not config_channel_id.startswith('@') and not config_channel_id.startswith('-'):
+                config_channel_id = f"@{config_channel_id}"
+            
+            # Check if already in DB channels to avoid duplicate check
+            if not any(ch['channel_id'] == config_channel_id for ch in channels):
+                channels.append({
+                    'channel_id': config_channel_id,
+                    'channel_name': 'کانال اصلی',
+                    'channel_url': bot_config.get('channel_link', ''),
+                    'is_required': True
+                })
+        
+        if not channels:
             return True
         
-        # Normalize channel_id: if it's a username without @, add @
-        if isinstance(channel_id, str) and not channel_id.startswith('@') and not channel_id.startswith('-'):
-            # It's a username, add @ prefix
-            channel_id = f"@{channel_id}"
-            logger.debug(f"Normalized channel_id to: {channel_id}")
-        
-        # Get bot instance from context
         bot = context.bot
+        all_joined = True
+        missing_channels = []
         
-        # Check membership
-        try:
-            member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
-            # Check if user is member, administrator, or creator
-            status = member.status
-            if status in ['member', 'administrator', 'creator']:
-                return True
-            else:
-                return False
-        except BadRequest as e:
-            logger.error(f"BadRequest checking channel membership: {e}")
-            # If channel not found or user not found, deny access
+        for channel in channels:
+            if not channel.get('is_required', True):
+                continue
+                
+            channel_id = channel['channel_id']
+            
+            try:
+                member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
+                status = member.status
+                
+                if status not in ['member', 'administrator', 'creator', 'restricted']:
+                    all_joined = False
+                    missing_channels.append(channel)
+                    logger.info(f"User {user_id} not in {channel_id} (status: {status})")
+            except BadRequest as e:
+                logger.error(f"BadRequest checking channel {channel_id}: {e}")
+                # If channel not found, we can't enforce it
+                continue
+            except Forbidden as e:
+                logger.warning(f"Bot not admin in channel {channel_id}: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Error checking channel {channel_id}: {e}")
+                continue
+        
+        if not all_joined:
+            # Store missing channels in context for show_force_join_message
+            context.user_data['missing_channels'] = missing_channels
             return False
-        except Forbidden as e:
-            logger.error(f"Forbidden checking channel membership: {e}")
-            # Bot may not have access to channel, allow access but log warning
-            logger.warning("Bot may not have access to check channel membership")
-            return True  # Allow access if bot can't check
-        except TelegramError as e:
-            logger.error(f"TelegramError checking channel membership: {e}")
-            # On error, allow access but log
-            return True
+            
+        return True
             
     except Exception as e:
         logger.error(f"Error in check_channel_membership: {e}")
-        # On unexpected error, allow access
         return True
 
 
 async def show_force_join_message(update: Update, context: ContextTypes.DEFAULT_TYPE, bot_config=None):
-    """Show force join message with channel link"""
+    """Show force join message with channel links"""
     if bot_config is None:
         from config import BOT_CONFIG
         bot_config = BOT_CONFIG
     
-    channel_id = bot_config.get('channel_id', '@YourChannel')
-    channel_link = bot_config.get('channel_link', 'https://t.me/YourChannel')
     bot_name = bot_config.get('bot_name', 'ربات')
     
-    # Get the message template and format it with bot_name
-    message_template = MessageTemplates.WELCOME_MESSAGES.get('force_join', """
-📢 برای استفاده از ربات {bot_name}، لطفاً ابتدا در کانال ما عضو شوید
-
-🔹 چرا عضویت در کانال؟
-• دریافت آخرین اخبار و به‌روزرسانی‌ها
-• اطلاع از تخفیف‌ها و پیشنهادات ویژه
-• آموزش‌های رایگان و نکات کاربردی
-• پشتیبانی سریع‌تر و اولویت‌دار
-
-✅ مراحل فعال‌سازی:
-۱. روی دکمه زیر کلیک کنید
-۲. وارد کانال شوید و عضو شوید
-۳. به ربات برگردید و دوباره /start را بزنید
-
-🌐 {bot_name} | دریچه‌ای به دنیای آزاد
-    """)
+    # Get missing channels from context or fetch all
+    missing_channels = context.user_data.get('missing_channels')
+    if not missing_channels:
+        # Fallback: get all required channels
+        missing_channels = channel_manager.get_required_channels()
+        # Add config channel if needed
+        config_channel_id = bot_config.get('channel_id')
+        if config_channel_id and not any(ch['channel_id'] == config_channel_id for ch in missing_channels):
+             missing_channels.append({
+                'channel_id': config_channel_id,
+                'channel_name': 'کانال اصلی',
+                'channel_url': bot_config.get('channel_link', ''),
+                'is_required': True
+            })
     
-    # Format the message with bot_name
-    message = message_template.format(bot_name=bot_name)
+    message = f"""📢 **عضویت اجباری**
+
+برای استفاده از ربات **{bot_name}**، لطفاً در کانال‌های زیر عضو شوید:
+
+👇 پس از عضویت، روی دکمه «✅ عضو شدم» کلیک کنید."""
     
-    keyboard = [
-        [InlineKeyboardButton("📢 عضویت در کانال", url=channel_link)],
-        [InlineKeyboardButton("✅ عضو شدم", callback_data="check_channel_join")]
-    ]
+    keyboard = []
+    for channel in missing_channels:
+        url = channel.get('channel_url')
+        if not url:
+            # Try to generate from ID if it's a username
+            cid = channel['channel_id']
+            if isinstance(cid, str) and cid.startswith('@'):
+                url = f"https://t.me/{cid[1:]}"
+            else:
+                url = "https://t.me/" # Fallback
+        
+        name = channel.get('channel_name') or "کانال ما"
+        keyboard.append([InlineKeyboardButton(f"📢 عضویت در {name}", url=url)])
+    
+    keyboard.append([InlineKeyboardButton("✅ عضو شدم", callback_data="check_channel_join")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    
     # Try to edit message if callback query, otherwise send new message
     if update.callback_query:
         try:

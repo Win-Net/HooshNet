@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <!-- CSS -->
+    <!-- CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-redesign.css') }}">
 
     {% block extra_css %}{% endblock %}
@@ -206,11 +207,11 @@
 
         menuToggle?.addEventListener('click', toggleSidebar);
         sidebarOverlay?.addEventListener('click', toggleSidebar);
-        
+
         // Close sidebar when clicking outside
-        document.addEventListener('click', function(e) {
-            if (sidebar.classList.contains('active') && 
-                !sidebar.contains(e.target) && 
+        document.addEventListener('click', function (e) {
+            if (sidebar.classList.contains('active') &&
+                !sidebar.contains(e.target) &&
                 !menuToggle.contains(e.target)) {
                 toggleSidebar();
             }
@@ -218,7 +219,7 @@
 
         // Close keyboard on mobile when clicking outside input fields
         if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-            document.addEventListener('click', function(e) {
+            document.addEventListener('click', function (e) {
                 if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
                     const activeElement = document.activeElement;
                     if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
@@ -227,7 +228,7 @@
                 }
             });
         }
-        
+
         // Header Scroll Effect
         window.addEventListener('scroll', () => {
             const header = document.getElementById('topHeader');

@@ -153,3 +153,13 @@ class SettingsManager:
     @property
     def webapp_url(self):
         return self.get_setting('webapp_url')
+
+    def get_theme(self) -> str:
+        """Get current theme (default: 'default')"""
+        return self.get_setting('theme', 'default')
+
+    def set_theme(self, theme_name: str, user_id: int = None) -> bool:
+        """Set current theme"""
+        return self.set_setting('theme', theme_name, description="Web Panel Theme", user_id=user_id)
+
+

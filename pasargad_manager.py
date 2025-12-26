@@ -793,59 +793,77 @@ class PasargadPanelManager:
             logger.error(f"Error resetting client UUID: {e}")
             return None
 
-    def add_traffic_to_client(self, inbound_id: int, client_uuid: str, additional_gb: int, client_name: str = None) -> bool:
-        """Add traffic to existing client"""
-        if not self.login():
-            return False
 
-        try:
-            username = client_name if client_name else client_uuid
-            
-            # Get current user data
-            response = self.session.get(
-                f"{self.base_url}/api/user/{username}",
-                verify=False,
-                timeout=30
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to get user for adding traffic: {response.status_code}")
-                return False
-                
-            current_user = response.json()
-            
-            # Calculate new data limit
-            current_limit = current_user.get('data_limit', 0) or 0
-            additional_bytes = additional_gb * 1024 * 1024 * 1024
-            new_limit = current_limit + additional_bytes
-            
-            # PasarGuard uses group_ids not groups
-            update_data = {
-                "data_limit": new_limit,
-                "group_ids": current_user.get('group_ids', []),
-                "expire": current_user.get('expire'),
-                "status": current_user.get('status', 'active')
+    def test_connection(self) -> Dict:
+        """Test connection to panel"""
+        start_time = time.time()
+        success = self.login()
+        latency = (time.time() - start_time) * 1000
+        
+        if success:
+            return {
+                'success': True,
+                'latency': int(latency),
+                'message': '✅ اتصال برقرار است'
             }
+        else:
+            return {
+                'success': False,
+                'latency': 0,
+                'message': '❌ خطا در اتصال'
+            }
+
+    def get_system_stats(self) -> Dict:
+        """Get system stats (CPU, RAM)"""
+        if not self.login():
+            return {}
             
-            logger.info(f"📤 Adding {additional_gb}GB to {username}. New limit: {new_limit}")
-            
-            response = self.session.put(
-                f"{self.base_url}/api/user/{username}",
-                json=update_data,
+        try:
+            # Marzban API for system stats
+            response = self.session.get(
+                f"{self.base_url}/api/system",
                 verify=False,
-                timeout=30
+                timeout=10
             )
             
-            if response.status_code in (200, 201):
-                logger.info(f"✅ Traffic added for {username}")
-                return True
-            else:
-                logger.error(f"❌ Failed to add traffic: {response.status_code} - {response.text}")
-                return False
-
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    'cpu': data.get('cpu_usage', 0),
+                    'ram': data.get('memory_usage', 0),
+                    'uptime': data.get('uptime', 0),
+                    'version': data.get('version', 'Unknown')
+                }
+            return {}
         except Exception as e:
-            logger.error(f"Error adding traffic to client: {e}")
-            return False
+            logger.error(f"Error getting system stats: {e}")
+            return {}
+
+    def get_users(self) -> List[Dict]:
+        """Get all users for sync"""
+        if not self.login():
+            return []
+            
+        try:
+            # Marzban API to list users
+            # Usually GET /api/users
+            response = self.session.get(
+                f"{self.base_url}/api/users",
+                params={'offset': 0, 'limit': 10000}, # Fetch all
+                verify=False,
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, dict) and 'users' in data:
+                    return data['users']
+                elif isinstance(data, list):
+                    return data
+            return []
+        except Exception as e:
+            logger.error(f"Error getting users: {e}")
+            return []
 
     def extend_client_expire(self, inbound_id: int, client_uuid: str, additional_days: int, client_name: str = None) -> bool:
         """Extend client expiration time by additional days"""

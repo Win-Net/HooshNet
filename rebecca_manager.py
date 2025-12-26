@@ -1342,3 +1342,27 @@ class RebeccaPanelManager(MarzbanPanelManager):
             import traceback
             logger.error(traceback.format_exc())
             return None
+
+    def get_users(self) -> List[Dict]:
+        """Get all users for sync (using cache)"""
+        if not self.ensure_logged_in():
+            return []
+            
+        try:
+            # Use cached fetch method
+            users_list = self._fetch_users_cached()
+            
+            users = []
+            for user in users_list:
+                users.append({
+                    'username': user.get('username'),
+                    'uuid': user.get('username'), # Rebecca uses username as ID
+                    'total_gb': user.get('data_limit', 0),
+                    'expiry_time': user.get('expire', 0),
+                    'enable': user.get('status') == 'active',
+                    'inbound_id': 0 # Not applicable
+                })
+            return users
+        except Exception as e:
+            logger.error(f"Error getting users from Rebecca: {e}")
+            return []

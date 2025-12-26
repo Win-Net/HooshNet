@@ -1431,3 +1431,77 @@ class PanelManager:
         except Exception as e:
             print(f"Error getting all clients from 3x-ui: {e}")
             return []
+
+    def test_connection(self) -> Dict:
+        """Test connection to panel"""
+        start_time = time.time()
+        success = self.login()
+        latency = (time.time() - start_time) * 1000
+        
+        if success:
+            return {
+                'success': True,
+                'latency': int(latency),
+                'message': '✅ اتصال برقرار است'
+            }
+        else:
+            return {
+                'success': False,
+                'latency': 0,
+                'message': '❌ خطا در اتصال'
+            }
+
+    def get_system_stats(self) -> Dict:
+        """Get system stats (CPU, RAM)"""
+        if not self.login():
+            return {}
+            
+        try:
+            # 3x-ui API for system stats
+            response = self.session.post(
+                f"{self.base_url}/server/status",
+                verify=False,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    obj = data.get('obj', {})
+                    return {
+                        'cpu': obj.get('cpu', 0),
+                        'ram': obj.get('mem', {}).get('current', 0) / obj.get('mem', {}).get('total', 1) * 100 if obj.get('mem', {}).get('total') else 0,
+                        'uptime': obj.get('uptime', 0),
+                        'version': obj.get('version', 'Unknown')
+                    }
+            return {}
+        except Exception as e:
+            print(f"Error getting system stats: {e}")
+            return {}
+
+    def get_users(self) -> List[Dict]:
+        """Get all users for sync"""
+        if not self.login():
+            return []
+            
+        try:
+            # 3x-ui API to list inbounds (users are inside inbounds)
+            inbounds = self.get_inbounds()
+            users = []
+            
+            for inbound in inbounds:
+                settings = json.loads(inbound.get('settings', '{}'))
+                clients = settings.get('clients', [])
+                for client in clients:
+                    users.append({
+                        'username': client.get('email'),
+                        'uuid': client.get('id'),
+                        'total_gb': client.get('totalGB', 0),
+                        'expiry_time': client.get('expiryTime', 0),
+                        'enable': client.get('enable', True),
+                        'inbound_id': inbound.get('id')
+                    })
+            return users
+        except Exception as e:
+            print(f"Error getting users: {e}")
+            return []

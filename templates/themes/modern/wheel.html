@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block title %}گردونه شانس{% endblock %}
+
+{% block content %}
+<style>
+    :root {
+        --wheel-size: 320px;
+        --wheel-border: 8px;
+        --wheel-color-border: #FFD700;
+        --wheel-color-center: #FFFFFF;
+    }
+
+    .wheel-container {
+        position: relative;
+        width: var(--wheel-size);
+        height: var(--wheel-size);
+        margin: 20px auto;
+        border-radius: 50%;
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        transition: transform 5s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+    }
+
+    .wheel-canvas {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: var(--wheel-border) solid var(--wheel-color-border);
+        box-sizing: border-box;
+        background: radial-gradient(circle, #2c3e50, #000);
+    }
+
+    .wheel-pointer {
+        position: absolute;
+        top: -15px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 30px;
+        height: 40px;
+        background: #FF5252;
+        clip-path: polygon(50% 100%, 0 0, 100% 0);
+        z-index: 10;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+    }
+
+    .wheel-center {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 50px;
+        height: 50px;
+        background: var(--wheel-color-center);
+        border-radius: 50%;
+        border: 4px solid var(--wheel-color-border);
+        z-index: 5;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: #333;
+    }
+
+    .spin-btn {
+        display: block;
+        width: 200px;
+        margin: 30px auto;
+        padding: 15px;
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #fff;
+        background: linear-gradient(45deg, #FFD700, #FFA000);
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(255, 160, 0, 0.4);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .spin-btn:disabled {
+        background: #555;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+
+    .spin-btn:not(:disabled):active {
+        transform: scale(0.95);
+    }
+
+    .prize-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(5px);
+    }
+
+    .prize-content {
+        background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+        padding: 30px;
+        border-radius: 20px;
+        text-align: center;
+        max-width: 90%;
+        width: 350px;
+        border: 1px solid rgba(255, 215, 0, 0.3);
+        box-shadow: 0 0 30px rgba(255, 215, 0, 0.2);
+        animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes popIn {
+        0% {
+            transform: scale(0.5);
+            opacity: 0;
+        }
+
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .prize-icon {
+        font-size: 4rem;
+        margin-bottom: 15px;
+        animation: bounce 1s infinite;
+    }
+
+    @keyframes bounce {
+
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    .prize-title {
+        font-size: 1.5rem;
+        color: #FFD700;
+        margin-bottom: 10px;
+    }
+
+    .prize-desc {
+        color: #ccc;
+        margin-bottom: 20px;
+        line-height: 1.5;
+    }
+
+    .close-btn {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 10px 30px;
+        border-radius: 25px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .close-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Confetti */
+    .confetti {
+        position: fixed;
+        width: 10px;
+        height: 10px;
+        background-color: #f00;
+        animation: fall linear forwards;
+        z-index: 999;
+    }
+
+    @keyframes fall {
+        to {
+            transform: translateY(100vh) rotate(720deg);
+        }
+    }
+</style>
+
+<div class="container fade-in">
+    <div class="page-header text-center">
+        <h1 class="page-title">🎰 گردونه شانس</h1>
+        <p class="text-muted">شانس خودت رو امتحان کن و جایزه ببر!</p>
+    </div>
+
+    <div class="wheel-wrapper" style="text-align: center; padding: 20px 0;">
+        <div class="wheel-container" id="wheelContainer">
+            <div class="wheel-pointer"></div>
+            <canvas id="wheelCanvas" class="wheel-canvas" width="640" height="640"></canvas>
+            <div class="wheel-center">
+                <i class="fas fa-star" style="color: #FFD700;"></i>
+            </div>
+        </div>
+
+        <div id="statusMessage" style="margin: 15px 0; min-height: 24px; color: #aaa;">
+            در حال بارگذاری...
+        </div>
+
+        <button id="spinBtn" class="spin-btn" disabled>
+            <i class="fas fa-sync-alt fa-spin" id="btnIcon" style="display: none;"></i>
+            <span id="btnText">چرخش گردونه</span>
+        </button>
+
+        <div style="margin-top: 15px; font-size: 0.9rem; color: #888;">
+            <i class="fas fa-info-circle"></i>
+            <span id="costInfo">هزینه هر چرخش: رایگان</span>
+        </div>
+    </div>
+</div>
+
+<!-- Prize Modal -->
+<div class="prize-modal" id="prizeModal">
+    <div class="prize-content">
+        <div class="prize-icon" id="prizeIcon">🎁</div>
+        <h2 class="prize-title" id="prizeTitle">تبریک!</h2>
+        <p class="prize-desc" id="prizeDesc">شما برنده شدید!</p>
+        <button class="close-btn" onclick="closeModal()">بستن</button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script>
+    const canvas = document.getElementById('wheelCanvas');
+    const ctx = canvas.getContext('2d');
+    const spinBtn = document.getElementById('spinBtn');
+    const wheelContainer = document.getElementById('wheelContainer');
+    const statusMessage = document.getElementById('statusMessage');
+    const costInfo = document.getElementById('costInfo');
+
+    let prizes = [];
+    let currentRotation = 0;
+    let isSpinning = false;
+    let config = null;
+
+    // Load configuration
+    async function loadConfig() {
+        try {
+            const res = await fetch('/api/wheel/config');
+            const data = await res.json();
+
+            if (data.success) {
+                config = data.config;
+                prizes = config.prizes;
+
+                // Update UI
+                if (config.spin_cost > 0) {
+                    costInfo.textContent = `هزینه هر چرخش: ${config.spin_cost.toLocaleString()} تومان`;
+                } else {
+                    costInfo.textContent = 'هزینه هر چرخش: رایگان';
+                }
+
+                if (data.can_spin) {
+                    spinBtn.disabled = false;
+                    statusMessage.textContent = data.message;
+                    statusMessage.style.color = '#4CAF50';
+                } else {
+                    spinBtn.disabled = true;
+                    statusMessage.textContent = data.message;
+                    statusMessage.style.color = '#FF5252';
+                }
+
+                drawWheel();
+            }
+        } catch (e) {
+            console.error('Error loading config:', e);
+            statusMessage.textContent = 'خطا در بارگذاری اطلاعات';
+        }
+    }
+
+    function drawWheel() {
+        if (!prizes.length) return;
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = canvas.width / 2 - 20; // Padding
+        const arc = (2 * Math.PI) / prizes.length;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw segments
+        prizes.forEach((prize, i) => {
+            const angle = i * arc - Math.PI / 2; // Start from top
+
+            ctx.beginPath();
+            ctx.fillStyle = prize.color || getColor(i);
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, angle, angle + arc);
+            ctx.lineTo(centerX, centerY);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw text
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(angle + arc / 2);
+            ctx.textAlign = "right";
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 24px Vazir, Arial";
+            ctx.shadowColor = "rgba(0,0,0,0.5)";
+            ctx.shadowBlur = 4;
+            ctx.fillText(prize.label, radius - 40, 10);
+
+            // Draw icon/emoji if available
+            // ctx.font = "30px Arial";
+            // ctx.fillText("🎁", radius - 100, 10);
+
+            ctx.restore();
+        });
+    }
+
+    function getColor(i) {
+        const colors = ['#FF5252', '#FF4081', '#E040FB', '#7C4DFF', '#536DFE', '#448AFF', '#40C4FF', '#18FFFF', '#64FFDA', '#69F0AE', '#B2FF59', '#EEFF41', '#FFFF00', '#FFD740', '#FFAB40', '#FF6E40'];
+        return colors[i % colors.length];
+    }
+
+    spinBtn.addEventListener('click', async () => {
+        if (isSpinning) return;
+
+        isSpinning = true;
+        spinBtn.disabled = true;
+        document.getElementById('btnText').textContent = 'در حال چرخش...';
+        document.getElementById('btnIcon').style.display = 'inline-block';
+
+        try {
+            const res = await fetch('/api/wheel/spin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                const result = data.result;
+                const prizeIndex = prizes.findIndex(p => p.label === result.prize_label);
+
+                if (prizeIndex !== -1) {
+                    spinTo(prizeIndex, result);
+                } else {
+                    // Fallback
+                    spinTo(0, result);
+                }
+            } else {
+                showToast(data.message, 'error');
+                resetBtn();
+            }
+        } catch (e) {
+            console.error('Error spinning:', e);
+            showToast('خطا در ارتباط با سرور', 'error');
+            resetBtn();
+        }
+    });
+
+    function spinTo(winnerIndex, result) {
+        const arc = 360 / prizes.length;
+        // Calculate target rotation to align winner with pointer (top)
+        // Pointer is at -90deg (top). 
+        // We need to rotate the wheel so that the winner segment is at the top.
+        // Winner segment starts at winnerIndex * arc and ends at (winnerIndex + 1) * arc
+        // Center of winner segment is (winnerIndex + 0.5) * arc
+        // We want this center to be at -90deg (270deg)
+
+        const winnerCenterAngle = (winnerIndex + 0.5) * arc;
+        const targetRotation = 360 * 5 + (270 - winnerCenterAngle); // 5 full spins + alignment
+
+        // Add some randomness within the segment
+        const randomOffset = (Math.random() - 0.5) * (arc * 0.8);
+        const finalRotation = currentRotation + targetRotation + randomOffset;
+
+        // CSS Transition
+        wheelContainer.style.transition = 'transform 5s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+        wheelContainer.style.transform = `rotate(${finalRotation}deg)`;
+
+        currentRotation = finalRotation;
+
+        setTimeout(() => {
+            showPrize(result);
+            resetBtn();
+            fireConfetti();
+            // Reload config to update balance/cooldown
+            loadConfig();
+        }, 5000);
+    }
+
+    function resetBtn() {
+        isSpinning = false;
+        spinBtn.disabled = false; // Will be re-disabled by loadConfig if cooldown
+        document.getElementById('btnText').textContent = 'چرخش مجدد';
+        document.getElementById('btnIcon').style.display = 'none';
+    }
+
+    function showPrize(result) {
+        const modal = document.getElementById('prizeModal');
+        const title = document.getElementById('prizeTitle');
+        const desc = document.getElementById('prizeDesc');
+        const icon = document.getElementById('prizeIcon');
+
+        title.textContent = result.prize_type === 'nothing' ? 'شانس بعدی!' : 'تبریک!';
+        desc.textContent = result.message;
+
+        // Set icon based on type
+        switch (result.prize_type) {
+            case 'balance': icon.textContent = '💰'; break;
+            case 'volume': icon.textContent = '📊'; break;
+            case 'time': icon.textContent = '⏳'; break;
+            case 'discount': icon.textContent = '🏷️'; break;
+            default: icon.textContent = '🍀';
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('prizeModal').style.display = 'none';
+    }
+
+    function fireConfetti() {
+        var count = 200;
+        var defaults = {
+            origin: { y: 0.7 }
+        };
+
+        function fire(particleRatio, opts) {
+            confetti(Object.assign({}, defaults, opts, {
+                particleCount: Math.floor(count * particleRatio)
+            }));
+        }
+
+        fire(0.25, { spread: 26, startVelocity: 55 });
+        fire(0.2, { spread: 60 });
+        fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+        fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+        fire(0.1, { spread: 120, startVelocity: 45 });
+    }
+
+    // Initialize
+    loadConfig();
+</script>
+{% endblock %}
