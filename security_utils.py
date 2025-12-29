@@ -545,8 +545,8 @@ def secure_before_request():
     # Get client IP
     client_ip = get_client_ip()
     
-    # Whitelisted IPs (Admin IPs)
-    WHITELISTED_IPS = ['185.209.196.245', '127.0.0.1']
+    # Whitelisted IPs (Localhost only)
+    WHITELISTED_IPS = ['127.0.0.1']
     
     # CRITICAL: Allow Admin/Reseller Access via Session or Whitelist
     # If user has a valid admin session OR is whitelisted, bypass IP blocking and unblock if needed
