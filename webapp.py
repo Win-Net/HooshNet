@@ -8844,7 +8844,8 @@ def admin_settings_backup():
         settings.set_setting('auto_backup_enabled', enabled, description="Auto Backup Enabled", updated_by=session.get('user_id'))
         settings.set_setting('auto_backup_interval', int(frequency), description="Auto Backup Interval (Hours)", updated_by=session.get('user_id'))
         
-        # Trigger immediate backup if enabled (or re-enabled)
+        # Trigger immediate backup if enabled (or re-enabled) or if frequency changed while enabled
+        # Basically if enabled is true, we trigger a backup to reset the timer and confirm it works
         if enabled:
             try:
                 # Reset last backup time to NOW so the scheduler picks it up based on new interval
@@ -8860,7 +8861,10 @@ def admin_settings_backup():
                 # Since we are in webapp, we might not have full bot_config, but we have what's needed
                 from config import BOT_CONFIG
                 
-                backup_manager = DatabaseBackupManager(get_db(), bot, BOT_CONFIG)
+                # Ensure we pass the correct database manager
+                # get_db() returns ProfessionalDatabaseManager instance
+                db_manager = get_db()
+                backup_manager = DatabaseBackupManager(db_manager, bot, BOT_CONFIG)
                 
                 # Run backup in background to not block response
                 import asyncio
@@ -8872,8 +8876,11 @@ def admin_settings_backup():
                         # Create and send backup
                         if await backup_manager.create_and_send_backup():
                             # Update last backup time
+                            # This is crucial: we set the last backup time to NOW
+                            # The scheduler checks: if (now - last_backup) >= frequency
+                            # So if we set it to now, the next backup will be in 'frequency' hours
                             settings.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
-                            logger.info("✅ Immediate backup completed successfully")
+                            logger.info("✅ Immediate backup completed successfully and timer reset")
                     except Exception as e:
                         logger.error(f"❌ Error in immediate backup: {e}")
 

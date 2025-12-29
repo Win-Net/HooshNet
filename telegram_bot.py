@@ -17748,7 +17748,7 @@ class VPNBot:
             await query.edit_message_text("⏳ در حال ایجاد بکاپ...")
             try:
                 backup_manager = DatabaseBackupManager(self.db)
-                backup_file = backup_manager.create_backup()
+                backup_file = await backup_manager.create_backup()
                 
                 if backup_file:
                     await context.bot.send_document(
