@@ -392,15 +392,37 @@ restore_database() {
     wait_enter
 }
 
+install_ssl() {
+    print_step "Installing SSL Certificate..."
+    read -p "Enter Domain Name (e.g., example.com): " DOMAIN
+    read -p "Enter Email Address (Optional): " EMAIL
+    
+    if [ -z "$DOMAIN" ]; then
+        print_error "Domain name is required!"
+        return
+    fi
+    
+    print_info "Generating certificate for $DOMAIN..."
+    
+    # Copy script to container if not already there (it's mounted via volume usually, but let's be safe)
+    # Actually, .:/app volume mount handles it.
+    
+    docker compose exec vpn-bot chmod +x /app/generate_ssl.sh
+    docker compose exec vpn-bot /app/generate_ssl.sh "$DOMAIN" "$EMAIL"
+    
+    if [ $? -eq 0 ]; then
+        print_success "SSL Certificate installed successfully!"
+    else
+        print_error "Failed to install SSL Certificate."
+    fi
+    wait_enter
+}
+
 renew_ssl() {
     print_step "Renewing SSL Certificate..."
-    if command -v certbot &> /dev/null; then
-        certbot renew
-        docker compose restart vpn-bot
-        print_success "SSL Renewed."
-    else
-        print_warning "Certbot not found on host. Ensure it's installed or use Docker Certbot."
-    fi
+    docker compose exec vpn-bot certbot renew
+    docker compose exec vpn-bot supervisorctl restart nginx
+    print_success "SSL Renewed."
     wait_enter
 }
 
@@ -495,15 +517,16 @@ while true; do
     echo -e " ${GREEN}8.${RESET} ${ICON_GEAR} Edit Config (.env)"
     echo -e " ${GREEN}9.${RESET} ${ICON_DB} Backup Database"
     echo -e " ${GREEN}10.${RESET} ${ICON_DB} Restore Database"
-    echo -e " ${GREEN}11.${RESET} ${ICON_LOCK} Renew SSL"
+    echo -e " ${GREEN}11.${RESET} ${ICON_LOCK} Install SSL Certificate"
+    echo -e " ${GREEN}12.${RESET} ${ICON_LOCK} Renew SSL"
     echo ""
     echo -e " ${CYAN}${BOLD}UTILITIES${RESET}"
-    echo -e " ${GREEN}12.${RESET} ${ICON_LOG} View Logs"
-    echo -e " ${GREEN}13.${RESET} ${ICON_TRASH} Clear Logs"
-    echo -e " ${GREEN}14.${RESET} ${ICON_CHART} System Monitor"
-    echo -e " ${GREEN}15.${RESET} ${ICON_ROCKET} Enable BBR"
-    echo -e " ${GREEN}16.${RESET} ${ICON_ROCKET} Speedtest"
-    echo -e " ${GREEN}17.${RESET} ${ICON_INSTALL} Install 'hooshnet' Command"
+    echo -e " ${GREEN}13.${RESET} ${ICON_LOG} View Logs"
+    echo -e " ${GREEN}14.${RESET} ${ICON_TRASH} Clear Logs"
+    echo -e " ${GREEN}15.${RESET} ${ICON_CHART} System Monitor"
+    echo -e " ${GREEN}16.${RESET} ${ICON_ROCKET} Enable BBR"
+    echo -e " ${GREEN}17.${RESET} ${ICON_ROCKET} Speedtest"
+    echo -e " ${GREEN}18.${RESET} ${ICON_INSTALL} Install 'hooshnet' Command"
     echo ""
     echo -e " ${RED}0.${RESET} ${ICON_EXIT} Exit"
     echo ""
@@ -521,13 +544,14 @@ while true; do
         8) edit_config ;;
         9) backup_database ;;
         10) restore_database ;;
-        11) renew_ssl ;;
-        12) view_logs ;;
-        13) clear_logs ;;
-        14) system_monitoring ;;
-        15) enable_bbr ;;
-        16) run_speedtest ;;
-        17) install_shortcut ;;
+        11) install_ssl ;;
+        12) renew_ssl ;;
+        13) view_logs ;;
+        14) clear_logs ;;
+        15) system_monitoring ;;
+        16) enable_bbr ;;
+        17) run_speedtest ;;
+        18) install_shortcut ;;
         0) clear; exit 0 ;;
         *) print_error "Invalid choice!"; sleep 1 ;;
     esac

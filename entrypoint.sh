@@ -43,6 +43,18 @@ echo "Running Database Migrations..."
 # Force Rebuild 2024-12-29
 python3 -c "from professional_database import ProfessionalDatabaseManager; db = ProfessionalDatabaseManager(); db.init_database()"
 
+# Ensure SSL Directory Exists
+mkdir -p /etc/nginx/ssl
+
+# Generate Self-Signed Certificate if missing
+if [ ! -f /etc/nginx/ssl/fullchain.pem ] || [ ! -f /etc/nginx/ssl/privkey.pem ]; then
+    echo "Generating self-signed certificate..."
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout /etc/nginx/ssl/privkey.pem \
+        -out /etc/nginx/ssl/fullchain.pem \
+        -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+fi
+
 # Start Supervisor
 echo "Starting Supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

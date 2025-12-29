@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y \
     supervisor \
     procps \
     iproute2 \
+    certbot \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
