@@ -367,6 +367,23 @@ def security_headers(response):
     """Apply security headers to every response"""
     return secure_after_request(response)
 
+# Health check endpoint for Docker
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Docker/Kubernetes"""
+    try:
+        # Basic health check - just return OK
+        return jsonify({
+            'status': 'healthy',
+            'message': 'VPN Bot Web Application is running'
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'message': str(e)
+        }), 500
+
 # Note: Static file protection is handled in security_check() before_request handler
 # Flask's default static file handler is used, but we filter requests before they reach it
 
