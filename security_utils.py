@@ -545,6 +545,22 @@ def secure_before_request():
     # Get client IP
     client_ip = get_client_ip()
     
+    # Whitelisted IPs (Admin IPs)
+    WHITELISTED_IPS = ['185.209.196.245', '127.0.0.1']
+    
+    # CRITICAL: Allow Admin/Reseller Access via Session or Whitelist
+    # If user has a valid admin session OR is whitelisted, bypass IP blocking and unblock if needed
+    is_whitelisted = client_ip in WHITELISTED_IPS
+    has_valid_session = session.get('admin_logged_in') or session.get('reseller_logged_in')
+    
+    if is_whitelisted or has_valid_session:
+        if is_ip_blocked(client_ip):
+            logger.info(f"🔓 Unblocking IP {client_ip} because of valid session or whitelist")
+            if client_ip in _blocked_ips:
+                del _blocked_ips[client_ip]
+        # Skip further checks for whitelisted/admin users to prevent accidental blocking
+        return None
+    
     # Check if IP is blocked
     if is_ip_blocked(client_ip):
         logger.warning(f"🚫 Blocked IP {client_ip} attempted access to {request.path}")
