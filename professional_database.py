@@ -1638,7 +1638,7 @@ class ProfessionalDatabaseManager:
             logger.error(f"Error adding balance: {e}")
             return False
     
-    def deduct_balance(self, user_id: int, amount: int, transaction_type: str, invoice_id: int = None) -> bool:
+    def deduct_balance(self, user_id: int, amount: int, transaction_type: str, invoice_id: int = None, description: str = None) -> bool:
         """Deduct balance from user (using Internal ID)"""
         try:
             with self.get_connection() as conn:
@@ -1648,7 +1648,9 @@ class ProfessionalDatabaseManager:
                 cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount, user_id))
                 
                 # Log transaction
-                description = f"Payment for invoice #{invoice_id}" if invoice_id else "Balance deduction"
+                if not description:
+                    description = f"Payment for invoice #{invoice_id}" if invoice_id else "Balance deduction"
+                
                 cursor.execute('''
                     INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
                     VALUES (%s, %s, %s, %s)
@@ -5005,6 +5007,24 @@ class ProfessionalDatabaseManager:
         except Exception as e:
             logger.error(f"Error getting ticket replies: {e}")
             return []
+
+    def check_duplicate_ticket(self, user_id: int, message_text: str, time_window_minutes: int = 5) -> bool:
+        """Check if a similar ticket exists from the user within the time window"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT id FROM tickets 
+                    WHERE user_id = %s 
+                    AND message = %s 
+                    AND created_at > NOW() - INTERVAL %s MINUTE
+                    AND status != 'closed'
+                ''', (user_id, message_text, time_window_minutes))
+                result = cursor.fetchone()
+                return result is not None
+        except Exception as e:
+            logger.error(f"Error checking duplicate ticket: {e}")
+            return False
     
     def add_ticket_reply(self, ticket_id: int, user_id: int, message: str, is_admin: bool = False) -> Optional[int]:
         """Add a reply to a ticket"""

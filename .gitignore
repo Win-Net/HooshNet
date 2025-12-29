@@ -66,6 +66,11 @@ temp/
 *.tmp
 
 
+
 # Backups
 backups/
 analysis_temp/
+
+# User Exclusions
+donation/
+.venv/

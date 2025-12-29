@@ -28,7 +28,8 @@
                     <i class="fas fa-search"></i>
                     <span>جستجو</span>
                 </button>
-                <button class="btn btn-primary" onclick="showGiftModal()" style="background: var(--p-warning); border-color: var(--p-warning); color: white;">
+                <button class="btn btn-primary" onclick="showGiftModal()"
+                    style="background: var(--p-warning); border-color: var(--p-warning); color: white;">
                     <i class="fas fa-gift"></i>
                     <span>هدیه همگانی</span>
                 </button>
@@ -147,7 +148,8 @@
         <form id="giftForm" onsubmit="giftAllUsers(event)">
             <div class="form-group">
                 <label class="form-label">مبلغ هدیه (تومان)</label>
-                <input type="number" name="amount" class="form-control" required min="1000" placeholder="مثال: 50000">
+                <input type="number" name="amount" class="form-control" required min="1000" placeholder="مثال: 50000"
+                    inputmode="numeric" pattern="[0-9]*">
             </div>
 
             <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-xl);">
@@ -203,7 +205,7 @@
         event.preventDefault();
         const form = event.target;
         const amount = parseInt(form.amount.value);
-        
+
         if (!amount || amount <= 0) {
             showToast('لطفاً مبلغ معتبری وارد کنید', 'error');
             return;
@@ -277,7 +279,7 @@
             // Try to get count from page data if available
             const userCards = document.querySelectorAll('.user-card');
             userCount = userCards.length || 0;
-            
+
             // If we have cards, estimate total (this is approximate)
             if (userCount > 0) {
                 // This is just an estimate, actual count will be shown after API call
@@ -286,7 +288,7 @@
         } catch (e) {
             // Ignore
         }
-        
+
         document.getElementById('giftAmountDisplay').textContent = amount.toLocaleString('fa-IR') + ' تومان';
         document.getElementById('giftUsersCount').textContent = 'تمام کاربران فعال';
         document.getElementById('giftTotalCost').textContent = 'محاسبه پس از تأیید';
@@ -309,7 +311,7 @@
         const amount = giftConfirmationModal.amount;
         const btn = document.querySelector('#giftConfirmationModal button[onclick="confirmGiftAll()"]');
         const originalText = btn.innerHTML;
-        
+
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ارسال...';
         btn.disabled = true;
 

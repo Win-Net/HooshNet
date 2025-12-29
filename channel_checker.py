@@ -55,7 +55,14 @@ async def check_channel_membership(update: Update, context: ContextTypes.DEFAULT
                 config_channel_id = f"@{config_channel_id}"
             
             # Check if already in DB channels to avoid duplicate check
-            if not any(ch['channel_id'] == config_channel_id for ch in channels):
+            # Use string comparison to handle int/str differences
+            is_duplicate = False
+            for ch in channels:
+                if str(ch['channel_id']) == str(config_channel_id):
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
                 channels.append({
                     'channel_id': config_channel_id,
                     'channel_name': 'کانال اصلی',
@@ -144,6 +151,10 @@ async def show_force_join_message(update: Update, context: ContextTypes.DEFAULT_
             cid = channel['channel_id']
             if isinstance(cid, str) and cid.startswith('@'):
                 url = f"https://t.me/{cid[1:]}"
+            elif str(cid).startswith('-100'):
+                # Private channel ID, cannot generate link without invite link
+                # But we can try to link to the bot itself or a placeholder
+                url = "https://t.me/" 
             else:
                 url = "https://t.me/" # Fallback
         

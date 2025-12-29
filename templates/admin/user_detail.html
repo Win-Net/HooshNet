@@ -21,7 +21,8 @@
                 <i class="fas fa-sign-in-alt"></i>
                 <span>ورود به پنل کاربر</span>
             </button>
-            <button onclick="showSendMessageModal()" class="btn btn-info" style="background: var(--p-info); border-color: var(--p-info); color: white;">
+            <button onclick="showSendMessageModal()" class="btn btn-info"
+                style="background: var(--p-info); border-color: var(--p-info); color: white;">
                 <i class="fas fa-paper-plane"></i>
                 <span>ارسال پیام</span>
             </button>
@@ -101,11 +102,13 @@
                     </div>
                 </div>
                 <div style="display: flex; gap: var(--sp-sm);">
-                    <button onclick="showAddBalanceModal()" class="btn btn-success" style="flex: 1; background: var(--p-success); border-color: var(--p-success); color: white;">
+                    <button onclick="showAddBalanceModal()" class="btn btn-success"
+                        style="flex: 1; background: var(--p-success); border-color: var(--p-success); color: white;">
                         <i class="fas fa-plus"></i>
                         <span>افزایش موجودی</span>
                     </button>
-                    <button onclick="showSubtractBalanceModal()" class="btn btn-danger" style="flex: 1; background: var(--p-error); border-color: var(--p-error); color: white;">
+                    <button onclick="showSubtractBalanceModal()" class="btn btn-danger"
+                        style="flex: 1; background: var(--p-error); border-color: var(--p-error); color: white;">
                         <i class="fas fa-minus"></i>
                         <span>کاهش موجودی</span>
                     </button>
@@ -294,7 +297,7 @@
             <div class="form-group">
                 <label class="form-label">مبلغ (تومان)</label>
                 <input type="number" name="amount" class="form-control" required min="1000" step="1000"
-                    placeholder="مثال: 100000">
+                    placeholder="مثال: 100000" inputmode="numeric" pattern="[0-9]*">
             </div>
             <div class="form-group">
                 <label class="form-label">توضیحات</label>
@@ -323,7 +326,7 @@
             <div class="form-group">
                 <label class="form-label">مبلغ (تومان)</label>
                 <input type="number" name="amount" class="form-control" required min="1000" step="1000"
-                    placeholder="مثال: 50000">
+                    placeholder="مثال: 50000" inputmode="numeric" pattern="[0-9]*">
             </div>
             <div class="form-group">
                 <label class="form-label">توضیحات</label>
@@ -351,8 +354,10 @@
         </div>
         <div class="modal-body">
             <p id="banModalMessage">آیا از مسدود کردن این کاربر اطمینان دارید؟</p>
-            <div style="background: var(--p-bg-hover); padding: var(--sp-md); border-radius: var(--radius-md); margin-top: var(--sp-md);">
-                <div style="font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: var(--sp-xs);">نکته مهم:</div>
+            <div
+                style="background: var(--p-bg-hover); padding: var(--sp-md); border-radius: var(--radius-md); margin-top: var(--sp-md);">
+                <div style="font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: var(--sp-xs);">نکته مهم:
+                </div>
                 <ul style="margin: 0; padding-right: var(--sp-lg); font-size: 0.85rem; color: var(--p-text-main);">
                     <li>دسترسی کاربر به بات و وب اپ قطع خواهد شد</li>
                     <li>کاربر قادر به استفاده از سرویس‌ها نخواهد بود</li>
@@ -361,8 +366,10 @@
             </div>
         </div>
         <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
-            <button type="button" class="btn btn-secondary" onclick="closeModal('banUserModal')" style="flex: 1;">لغو</button>
-            <button type="button" class="btn btn-warning" id="confirmBanBtn" onclick="confirmBanUser()" style="flex: 2; background: var(--p-warning); border-color: var(--p-warning); color: white;">تأیید</button>
+            <button type="button" class="btn btn-secondary" onclick="closeModal('banUserModal')"
+                style="flex: 1;">لغو</button>
+            <button type="button" class="btn btn-warning" id="confirmBanBtn" onclick="confirmBanUser()"
+                style="flex: 2; background: var(--p-warning); border-color: var(--p-warning); color: white;">تأیید</button>
         </div>
     </div>
 </div>
@@ -378,10 +385,13 @@
             <button onclick="closeModal('deleteUserModal')" class="close-btn"><i class="fas fa-times"></i></button>
         </div>
         <div class="modal-body">
-            <p style="color: var(--p-error); font-weight: 700; margin-bottom: var(--sp-md);">⚠️ هشدار: این عملیات غیرقابل بازگشت است!</p>
+            <p style="color: var(--p-error); font-weight: 700; margin-bottom: var(--sp-md);">⚠️ هشدار: این عملیات
+                غیرقابل بازگشت است!</p>
             <p>آیا از حذف کامل این کاربر و تمام سرویس‌های او اطمینان دارید؟</p>
-            <div style="background: rgba(239, 68, 68, 0.1); padding: var(--sp-md); border-radius: var(--radius-md); margin-top: var(--sp-md); border: 1px solid var(--p-error);">
-                <div style="font-size: 0.85rem; color: var(--p-error); margin-bottom: var(--sp-xs); font-weight: 700;">موارد حذف شده:</div>
+            <div
+                style="background: rgba(239, 68, 68, 0.1); padding: var(--sp-md); border-radius: var(--radius-md); margin-top: var(--sp-md); border: 1px solid var(--p-error);">
+                <div style="font-size: 0.85rem; color: var(--p-error); margin-bottom: var(--sp-xs); font-weight: 700;">
+                    موارد حذف شده:</div>
                 <ul style="margin: 0; padding-right: var(--sp-lg); font-size: 0.85rem; color: var(--p-text-main);">
                     <li>حساب کاربری</li>
                     <li>تمام سرویس‌های فعال</li>
@@ -391,8 +401,11 @@
             </div>
         </div>
         <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
-            <button type="button" class="btn btn-secondary" onclick="closeModal('deleteUserModal')" style="flex: 1;">لغو</button>
-            <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()" style="flex: 2; background: var(--p-error); border-color: var(--p-error); color: white;">حذف دائمی</button>
+            <button type="button" class="btn btn-secondary" onclick="closeModal('deleteUserModal')"
+                style="flex: 1;">لغو</button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()"
+                style="flex: 2; background: var(--p-error); border-color: var(--p-error); color: white;">حذف
+                دائمی</button>
         </div>
     </div>
 </div>
@@ -410,10 +423,12 @@
         <form onsubmit="sendPersonalMessage(event)">
             <div class="form-group">
                 <label class="form-label">متن پیام</label>
-                <textarea name="message" class="form-control" rows="5" required placeholder="پیام خود را وارد کنید..."></textarea>
+                <textarea name="message" class="form-control" rows="5" required
+                    placeholder="پیام خود را وارد کنید..."></textarea>
             </div>
             <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('sendMessageModal')" style="flex: 1;">لغو</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('sendMessageModal')"
+                    style="flex: 1;">لغو</button>
                 <button type="submit" class="btn btn-primary" style="flex: 2;">ارسال پیام</button>
             </div>
         </form>
@@ -533,12 +548,12 @@
     function showBanUserModal(id, isBanned) {
         currentBanUserId = id;
         currentBanState = isBanned === 'true' || isBanned === true;
-        
+
         const modal = document.getElementById('banUserModal');
         const title = document.getElementById('banModalTitle');
         const message = document.getElementById('banModalMessage');
         const confirmBtn = document.getElementById('confirmBanBtn');
-        
+
         if (currentBanState) {
             title.textContent = 'رفع مسدودیت کاربر';
             message.textContent = 'آیا از رفع مسدودیت این کاربر اطمینان دارید؟';
@@ -554,21 +569,21 @@
             confirmBtn.style.background = 'var(--p-warning)';
             confirmBtn.style.borderColor = 'var(--p-warning)';
         }
-        
+
         modal.style.display = 'flex';
     }
 
     async function confirmBanUser() {
         if (!currentBanUserId) return;
-        
+
         const shouldBan = !currentBanState;
-        
+
         try {
             const response = await apiCall(`/api/admin/users/${currentBanUserId}/ban`, {
                 method: 'PUT',
                 body: JSON.stringify({ is_banned: shouldBan })
             });
-            
+
             showToast(shouldBan ? 'کاربر با موفقیت مسدود شد' : 'رفع مسدودیت با موفقیت انجام شد', 'success');
             closeModal('banUserModal');
             setTimeout(() => window.location.reload(), 1000);
@@ -592,7 +607,7 @@
             const response = await apiCall(`/api/admin/users/${currentDeleteUserId}`, {
                 method: 'DELETE'
             });
-            
+
             showToast('کاربر با موفقیت حذف شد', 'success');
             closeModal('deleteUserModal');
             setTimeout(() => window.location.href = '/admin/users', 1000);
@@ -610,7 +625,7 @@
         event.preventDefault();
         const form = event.target;
         const message = form.message.value.trim();
-        
+
         if (!message) {
             showToast('لطفاً متن پیام را وارد کنید', 'error');
             return;
@@ -621,7 +636,7 @@
                 method: 'POST',
                 body: JSON.stringify({ message: message })
             });
-            
+
             showToast('پیام با موفقیت ارسال شد', 'success');
             closeModal('sendMessageModal');
             form.reset();

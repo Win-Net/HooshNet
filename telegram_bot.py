@@ -7081,7 +7081,7 @@ class VPNBot:
                 await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
-            logger.error(f"Error handling admin panel: {e}")
+            logger.error(f"Error handling admin panel: {e}", exc_info=True)
             error_text = "❌ خطا در نمایش پنل مدیریت."
             if query:
                 await query.edit_message_text(error_text)
@@ -16656,7 +16656,7 @@ class VPNBot:
             # We can store the file_id in receipt_image column
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE invoices SET receipt_image = %s, payment_method = 'card' WHERE id = %s", (file_id, invoice_id))
+                cursor.execute("UPDATE invoices SET receipt_path = %s, payment_method = 'card' WHERE id = %s", (file_id, invoice_id))
                 conn.commit()
             
             await update.message.reply_text("✅ رسید شما دریافت شد و پس از تایید ادمین، موجودی شما افزایش می‌یابد/سرویس فعال می‌شود.")
@@ -18752,6 +18752,11 @@ class VPNBot:
             from support_department import support_department_manager
             support_department_manager.set_database(self.db)
             
+            # Check for duplicate ticket
+            if self.db.check_duplicate_ticket(user_id, text):
+                await update.message.reply_text("⚠️ شما قبلاً یک تیکت با همین متن ثبت کرده‌اید. لطفاً منتظر پاسخ بمانید.")
+                return
+
             # Create ticket
             ticket_id = self.db.create_ticket(user_id, "پشتیبانی", text)
             
@@ -19456,6 +19461,12 @@ def main():
             # Send bot start report
             if bot.reporting_system:
                 await bot.reporting_system.report_bot_start()
+                
+            # Start auto-backup scheduler
+            if bot.backup_manager:
+                asyncio.create_task(bot.backup_manager.start_auto_backup(interval_hours=6))
+                logger.info("✅ Auto-backup scheduler started (every 6 hours)")
+                
         except Exception as e:
             logger.error(f"Failed in post_init: {e}")
     

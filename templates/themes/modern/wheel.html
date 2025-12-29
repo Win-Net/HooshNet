@@ -5,20 +5,32 @@
 {% block content %}
 <style>
     :root {
-        --wheel-size: 320px;
-        --wheel-border: 8px;
+        --wheel-size: 340px;
+        --wheel-border: 10px;
         --wheel-color-border: #FFD700;
-        --wheel-color-center: #FFFFFF;
+        --wheel-color-center: #1a1a1a;
+        --wheel-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
     }
 
-    .wheel-container {
+    .wheel-wrapper {
         position: relative;
         width: var(--wheel-size);
         height: var(--wheel-size);
-        margin: 20px auto;
+        margin: 60px auto 40px auto;
+        /* Increased top margin for pointer */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .wheel-container {
+        width: 100%;
+        height: 100%;
         border-radius: 50%;
-        box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        box-shadow: var(--wheel-shadow);
         transition: transform 5s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+        position: relative;
+        z-index: 1;
     }
 
     .wheel-canvas {
@@ -30,58 +42,77 @@
         background: radial-gradient(circle, #2c3e50, #000);
     }
 
+    /* Stationary Pointer - ABSOLUTELY POSITIONED RELATIVE TO WRAPPER */
     .wheel-pointer {
         position: absolute;
-        top: -15px;
+        top: -35px;
+        /* Moved up slightly */
         left: 50%;
         transform: translateX(-50%);
-        width: 30px;
-        height: 40px;
-        background: #FF5252;
+        width: 50px;
+        /* Slightly larger */
+        height: 60px;
+        background: linear-gradient(to bottom, #FF5252, #D32F2F);
         clip-path: polygon(50% 100%, 0 0, 100% 0);
-        z-index: 10;
-        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+        z-index: 100;
+        /* High z-index to stay on top */
+        filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
     }
 
+    /* Center Hub */
     .wheel-center {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 50px;
-        height: 50px;
+        width: 60px;
+        height: 60px;
         background: var(--wheel-color-center);
         border-radius: 50%;
         border: 4px solid var(--wheel-color-border);
-        z-index: 5;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        z-index: 10;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-weight: bold;
-        color: #333;
+        font-size: 24px;
     }
 
     .spin-btn {
         display: block;
-        width: 200px;
-        margin: 30px auto;
-        padding: 15px;
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: #fff;
-        background: linear-gradient(45deg, #FFD700, #FFA000);
+        width: 220px;
+        margin: 40px auto;
+        padding: 18px;
+        font-size: 1.3rem;
+        font-weight: 800;
+        color: #1a1a1a;
+        background: linear-gradient(45deg, #FFD700, #FFA000, #FFD700);
+        background-size: 200% auto;
         border: none;
         border-radius: 50px;
         cursor: pointer;
-        box-shadow: 0 4px 15px rgba(255, 160, 0, 0.4);
-        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+        transition: all 0.3s ease;
+        animation: shine 3s infinite linear;
+    }
+
+    @keyframes shine {
+        to {
+            background-position: 200% center;
+        }
     }
 
     .spin-btn:disabled {
-        background: #555;
+        background: #444;
+        color: #888;
         cursor: not-allowed;
         box-shadow: none;
+        animation: none;
+    }
+
+    .spin-btn:not(:disabled):hover {
+        transform: scale(1.05);
+        box-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
     }
 
     .spin-btn:not(:disabled):active {
@@ -95,22 +126,22 @@
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.85);
+        background: rgba(0, 0, 0, 0.9);
         z-index: 1000;
         align-items: center;
         justify-content: center;
-        backdrop-filter: blur(5px);
+        backdrop-filter: blur(8px);
     }
 
     .prize-content {
-        background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
-        padding: 30px;
-        border-radius: 20px;
+        background: linear-gradient(145deg, #1a1a1a, #2d2d2d);
+        padding: 40px;
+        border-radius: 25px;
         text-align: center;
         max-width: 90%;
-        width: 350px;
-        border: 1px solid rgba(255, 215, 0, 0.3);
-        box-shadow: 0 0 30px rgba(255, 215, 0, 0.2);
+        width: 380px;
+        border: 2px solid #FFD700;
+        box-shadow: 0 0 50px rgba(255, 215, 0, 0.3);
         animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
@@ -127,9 +158,10 @@
     }
 
     .prize-icon {
-        font-size: 4rem;
-        margin-bottom: 15px;
+        font-size: 5rem;
+        margin-bottom: 20px;
         animation: bounce 1s infinite;
+        text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
     }
 
     @keyframes bounce {
@@ -140,34 +172,41 @@
         }
 
         50% {
-            transform: translateY(-10px);
+            transform: translateY(-15px);
         }
     }
 
     .prize-title {
-        font-size: 1.5rem;
+        font-size: 2rem;
         color: #FFD700;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        font-weight: 900;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
     }
 
     .prize-desc {
-        color: #ccc;
-        margin-bottom: 20px;
-        line-height: 1.5;
+        color: #fff;
+        font-size: 1.1rem;
+        margin-bottom: 30px;
+        line-height: 1.6;
     }
 
     .close-btn {
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 10px 30px;
-        border-radius: 25px;
+        background: transparent;
+        color: #FFD700;
+        border: 2px solid #FFD700;
+        padding: 12px 40px;
+        border-radius: 30px;
+        font-weight: bold;
+        font-size: 1.1rem;
         cursor: pointer;
         transition: all 0.3s;
     }
 
     .close-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
+        background: #FFD700;
+        color: #000;
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
     }
 
     /* Confetti */
@@ -188,32 +227,40 @@
 </style>
 
 <div class="container fade-in">
-    <div class="page-header text-center">
-        <h1 class="page-title">🎰 گردونه شانس</h1>
-        <p class="text-muted">شانس خودت رو امتحان کن و جایزه ببر!</p>
+    <div class="page-header text-center" style="margin-bottom: 40px;">
+        <h1 class="page-title" style="font-size: 2.5rem; color: #FFD700; text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);">
+            🎰 Wheel of Fortune</h1>
+        <p class="text-muted" style="font-size: 1.1rem;">Spin the wheel and win prizes!</p>
     </div>
 
-    <div class="wheel-wrapper" style="text-align: center; padding: 20px 0;">
-        <div class="wheel-container" id="wheelContainer">
+    <div style="position: relative; max-width: 500px; margin: 0 auto;">
+        <div class="wheel-wrapper">
+            <!-- POINTER IS HERE, OUTSIDE THE ROTATING CONTAINER -->
             <div class="wheel-pointer"></div>
-            <canvas id="wheelCanvas" class="wheel-canvas" width="640" height="640"></canvas>
-            <div class="wheel-center">
-                <i class="fas fa-star" style="color: #FFD700;"></i>
+
+            <!-- THIS CONTAINER ROTATES -->
+            <div class="wheel-container" id="wheelContainer">
+                <canvas id="wheelCanvas" class="wheel-canvas" width="680" height="680"></canvas>
+                <div class="wheel-center">
+                    <i class="fas fa-star" style="color: #FFD700;"></i>
+                </div>
             </div>
         </div>
 
-        <div id="statusMessage" style="margin: 15px 0; min-height: 24px; color: #aaa;">
-            در حال بارگذاری...
+        <div id="statusMessage"
+            style="text-align: center; margin: 20px 0; min-height: 24px; color: #aaa; font-weight: bold;">
+            Loading...
         </div>
 
         <button id="spinBtn" class="spin-btn" disabled>
             <i class="fas fa-sync-alt fa-spin" id="btnIcon" style="display: none;"></i>
-            <span id="btnText">چرخش گردونه</span>
+            <span id="btnText">Spin Now</span>
         </button>
 
-        <div style="margin-top: 15px; font-size: 0.9rem; color: #888;">
-            <i class="fas fa-info-circle"></i>
-            <span id="costInfo">هزینه هر چرخش: رایگان</span>
+        <div
+            style="text-align: center; margin-top: 20px; font-size: 1rem; color: #888; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 15px; display: inline-block; width: 100%;">
+            <i class="fas fa-coins" style="color: #FFD700; margin-left: 5px;"></i>
+            <span id="costInfo">Cost: Free</span>
         </div>
     </div>
 </div>
@@ -222,9 +269,9 @@
 <div class="prize-modal" id="prizeModal">
     <div class="prize-content">
         <div class="prize-icon" id="prizeIcon">🎁</div>
-        <h2 class="prize-title" id="prizeTitle">تبریک!</h2>
-        <p class="prize-desc" id="prizeDesc">شما برنده شدید!</p>
-        <button class="close-btn" onclick="closeModal()">بستن</button>
+        <h2 class="prize-title" id="prizeTitle">Congratulations!</h2>
+        <p class="prize-desc" id="prizeDesc">You won!</p>
+        <button class="close-btn" onclick="closeModal()">Close</button>
     </div>
 </div>
 
@@ -254,9 +301,9 @@
 
                 // Update UI
                 if (config.spin_cost > 0) {
-                    costInfo.textContent = `هزینه هر چرخش: ${config.spin_cost.toLocaleString()} تومان`;
+                    costInfo.textContent = `Cost: ${config.spin_cost.toLocaleString()} Tomans`;
                 } else {
-                    costInfo.textContent = 'هزینه هر چرخش: رایگان';
+                    costInfo.textContent = 'Cost: Free';
                 }
 
                 if (data.can_spin) {
@@ -270,10 +317,14 @@
                 }
 
                 drawWheel();
+            } else {
+                statusMessage.textContent = data.message || 'Error loading data';
+                statusMessage.style.color = '#FF5252';
+                spinBtn.disabled = true;
             }
         } catch (e) {
             console.error('Error loading config:', e);
-            statusMessage.textContent = 'خطا در بارگذاری اطلاعات';
+            statusMessage.textContent = 'Error loading config';
         }
     }
 
@@ -282,7 +333,7 @@
 
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
-        const radius = canvas.width / 2 - 20; // Padding
+        const radius = canvas.width / 2 - 15; // Padding
         const arc = (2 * Math.PI) / prizes.length;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -292,11 +343,16 @@
             const angle = i * arc - Math.PI / 2; // Start from top
 
             ctx.beginPath();
-            ctx.fillStyle = prize.color || getColor(i);
+            // Use premium colors if not defined
+            ctx.fillStyle = prize.color || getPremiumColor(i);
             ctx.moveTo(centerX, centerY);
             ctx.arc(centerX, centerY, radius, angle, angle + arc);
             ctx.lineTo(centerX, centerY);
             ctx.fill();
+
+            // Add border between segments
+            ctx.strokeStyle = "rgba(0,0,0,0.2)";
+            ctx.lineWidth = 2;
             ctx.stroke();
 
             // Draw text
@@ -304,22 +360,39 @@
             ctx.translate(centerX, centerY);
             ctx.rotate(angle + arc / 2);
             ctx.textAlign = "right";
-            ctx.fillStyle = "#fff";
-            ctx.font = "bold 24px Vazir, Arial";
-            ctx.shadowColor = "rgba(0,0,0,0.5)";
-            ctx.shadowBlur = 4;
-            ctx.fillText(prize.label, radius - 40, 10);
+            ctx.fillStyle = "#fff"; // Always white text
 
-            // Draw icon/emoji if available
-            // ctx.font = "30px Arial";
-            // ctx.fillText("🎁", radius - 100, 10);
+            // INCREASED FONT SIZE TO 36px
+            ctx.font = "bold 36px Vazir, Arial";
+
+            ctx.shadowColor = "rgba(0,0,0,0.8)";
+            ctx.shadowBlur = 6;
+            ctx.fillText(prize.label, radius - 50, 10);
+
+            // Optional: Add inner circle for depth
+            ctx.beginPath();
+            ctx.arc(0, 0, radius * 0.2, 0, 2 * Math.PI);
+            ctx.fillStyle = "rgba(0,0,0,0.1)";
+            ctx.fill();
 
             ctx.restore();
         });
     }
 
-    function getColor(i) {
-        const colors = ['#FF5252', '#FF4081', '#E040FB', '#7C4DFF', '#536DFE', '#448AFF', '#40C4FF', '#18FFFF', '#64FFDA', '#69F0AE', '#B2FF59', '#EEFF41', '#FFFF00', '#FFD740', '#FFAB40', '#FF6E40'];
+    function getPremiumColor(i) {
+        // Premium palette: Deep Purple, Gold, Dark Blue, Red, Teal
+        const colors = [
+            '#4A148C', // Deep Purple
+            '#FFD700', // Gold (Darker for contrast)
+            '#0D47A1', // Dark Blue
+            '#B71C1C', // Deep Red
+            '#004D40', // Deep Teal
+            '#311B92', // Indigo
+            '#E65100', // Orange
+            '#1B5E20'  // Dark Green
+        ];
+        // Adjust Gold to be darker for white text if needed, or keep it and use shadow
+        if (i % colors.length === 1) return '#FBC02D'; // Darker Yellow/Gold
         return colors[i % colors.length];
     }
 
@@ -328,7 +401,7 @@
 
         isSpinning = true;
         spinBtn.disabled = true;
-        document.getElementById('btnText').textContent = 'در حال چرخش...';
+        document.getElementById('btnText').textContent = 'Spinning...';
         document.getElementById('btnIcon').style.display = 'inline-block';
 
         try {
@@ -345,7 +418,6 @@
                 if (prizeIndex !== -1) {
                     spinTo(prizeIndex, result);
                 } else {
-                    // Fallback
                     spinTo(0, result);
                 }
             } else {
@@ -354,29 +426,30 @@
             }
         } catch (e) {
             console.error('Error spinning:', e);
-            showToast('خطا در ارتباط با سرور', 'error');
+            showToast('Connection error', 'error');
             resetBtn();
         }
     });
 
     function spinTo(winnerIndex, result) {
         const arc = 360 / prizes.length;
-        // Calculate target rotation to align winner with pointer (top)
-        // Pointer is at -90deg (top). 
-        // We need to rotate the wheel so that the winner segment is at the top.
-        // Winner segment starts at winnerIndex * arc and ends at (winnerIndex + 1) * arc
-        // Center of winner segment is (winnerIndex + 0.5) * arc
-        // We want this center to be at -90deg (270deg)
+        // Pointer is at TOP (270 degrees in canvas, -90 degrees in CSS)
+        // In CSS rotate(0deg), the top is 0.
+        // We want the winner segment to be at the top.
+        // Winner segment is at index * arc.
+        // Center of winner is (index + 0.5) * arc.
+        // To bring this center to 0 (top), we need to rotate by -center.
+        // But we want to spin forward, so we add 360s.
 
         const winnerCenterAngle = (winnerIndex + 0.5) * arc;
-        const targetRotation = 360 * 5 + (270 - winnerCenterAngle); // 5 full spins + alignment
+        // Target is 360 - winnerCenterAngle to bring it to 0 (Top)
+        const targetRotation = 360 * 8 + (360 - winnerCenterAngle);
 
-        // Add some randomness within the segment
-        const randomOffset = (Math.random() - 0.5) * (arc * 0.8);
+        // Add randomness
+        const randomOffset = (Math.random() - 0.5) * (arc * 0.6);
         const finalRotation = currentRotation + targetRotation + randomOffset;
 
-        // CSS Transition
-        wheelContainer.style.transition = 'transform 5s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+        wheelContainer.style.transition = 'transform 6s cubic-bezier(0.15, 0.6, 0.1, 1)';
         wheelContainer.style.transform = `rotate(${finalRotation}deg)`;
 
         currentRotation = finalRotation;
@@ -385,15 +458,14 @@
             showPrize(result);
             resetBtn();
             fireConfetti();
-            // Reload config to update balance/cooldown
             loadConfig();
-        }, 5000);
+        }, 6000);
     }
 
     function resetBtn() {
         isSpinning = false;
-        spinBtn.disabled = false; // Will be re-disabled by loadConfig if cooldown
-        document.getElementById('btnText').textContent = 'چرخش مجدد';
+        spinBtn.disabled = false;
+        document.getElementById('btnText').textContent = 'Spin Again';
         document.getElementById('btnIcon').style.display = 'none';
     }
 
@@ -403,10 +475,9 @@
         const desc = document.getElementById('prizeDesc');
         const icon = document.getElementById('prizeIcon');
 
-        title.textContent = result.prize_type === 'nothing' ? 'شانس بعدی!' : 'تبریک!';
+        title.textContent = result.prize_type === 'nothing' ? 'Next Time!' : 'Congratulations!';
         desc.textContent = result.message;
 
-        // Set icon based on type
         switch (result.prize_type) {
             case 'balance': icon.textContent = '💰'; break;
             case 'volume': icon.textContent = '📊'; break;
@@ -423,7 +494,7 @@
     }
 
     function fireConfetti() {
-        var count = 200;
+        var count = 300;
         var defaults = {
             origin: { y: 0.7 }
         };

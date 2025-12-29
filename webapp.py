@@ -131,7 +131,7 @@ def parse_datetime_safe(date_value):
 # Initialize Flask app
 app = Flask(__name__)
 # app.secret_key is set later using persistent file
-logger.info("🚀 STARTING WEBAPP - VERSION: SESSION_FIX_V2")
+logger.info("🚀 STARTING WEBAPP - VERSION: DEBUG_HTTPS")
 
 # Configure maximum file upload size (10MB for receipts)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB
@@ -194,7 +194,9 @@ def inject_bot_prefix():
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Sessions expire after 24 hours
 # SECURITY: Use secure cookies in production (HTTPS required)
 # Auto-detect HTTPS from request scheme
-use_https = os.getenv('USE_HTTPS', 'false').lower() == 'true'
+use_https_env = os.getenv('USE_HTTPS', 'false').lower()
+use_https = use_https_env == 'true'
+logger.info(f"🔒 USE_HTTPS environment variable: {use_https_env} (Parsed: {use_https})")
 
 # CRITICAL FIX: Use ProxyFix to handle Nginx headers correctly
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -204,6 +206,19 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # x_port=1: Trust X-Forwarded-Port
 # x_prefix=1: Trust X-Forwarded-Prefix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+# Force HTTPS if configured (fixes issues where proxy sends http header)
+if use_https:
+    class ForceHTTPS:
+        def __init__(self, app):
+            self.app = app
+
+        def __call__(self, environ, start_response):
+            environ['wsgi.url_scheme'] = 'https'
+            return self.app(environ, start_response)
+    
+    app.wsgi_app = ForceHTTPS(app.wsgi_app)
+    logger.info("🔒 Forced HTTPS scheme for all requests")
 
 # Session Configuration
 # We use ProxyFix so Flask knows when it's secure. 
@@ -708,7 +723,7 @@ def sync_all_clients_data():
                                 UPDATE clients 
                                 SET used_gb = %s,
                                     last_activity = %s,
-                                    is_online = %s,
+                                    cached_is_online = %s,
                                     remaining_days = %s,
                                     expires_at = %s,
                                     updated_at = NOW()
@@ -972,6 +987,10 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
+            # SECURITY: Return 401 for API requests
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+                
             # SECURITY: Redirect to admin login instead of index
             # Check for bot_name in path or session
             bot_name = session.get('bot_name')
@@ -1202,11 +1221,11 @@ def telegram_auth():
     except Exception as e:
         logger.error(f"Error in Telegram auth: {e}")
         # SECURITY: Don't expose error details to client
-        return jsonify({'success': False, 'message': 'خطا در احراز هویت'}), 500
+        return jsonify({'success': False, 'message': 'Authentication failed'}), 500
 
 @app.route('/auth/telegram-webapp', methods=['POST'])
 @app.route('/<bot_name>/auth/telegram-webapp', methods=['POST'])
-@rate_limit(max_requests=5, window_seconds=60)  # 5 attempts per minute
+@rate_limit(max_requests=10, window_seconds=60)
 def telegram_webapp_auth(bot_name=None):
     """Handle Telegram Web App authentication"""
     try:
@@ -6653,46 +6672,31 @@ def api_admin_user_balance(user_id):
 
 🎉 می‌توانید از این موجودی برای خرید سرویس استفاده کنید."""
         
-        # Update user balance and create transaction in a transaction
-        with db_instance.get_connection() as conn:
-            cursor = conn.cursor(dictionary=True)
+        # Update user balance using professional database manager methods
+        success = False
+        if balance_type == 'subtract':
+            success = db_instance.deduct_balance(user_id, amount, transaction_type, description=action_desc)
+        else:
+            success = db_instance.add_balance(user_id, amount, transaction_type, description=action_desc)
             
-            # Update balance
-            cursor.execute('''
-                UPDATE users 
-                SET balance = %s, last_activity = CURRENT_TIMESTAMP
-                WHERE id = %s
-            ''', (new_balance, user_id))
-            
-            # Add transaction record
+        if success:
+            # Send notification to user via Telegram
             try:
-                cursor.execute('''
-                    INSERT INTO transactions (user_id, amount, description, transaction_type, created_at)
-                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ''', (user['telegram_id'], -amount if balance_type == 'subtract' else amount, action_desc, transaction_type))
+                from telegram_helper import TelegramHelper
+                TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
             except Exception as e:
-                # If transactions table doesn't exist or has different structure, use balance_transactions
-                try:
-                    cursor.execute('''
-                        INSERT INTO balance_transactions (user_id, amount, transaction_type, description, created_at)
-                        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ''', (user_id, -amount if balance_type == 'subtract' else amount, transaction_type, action_desc))
-                except Exception:
-                    pass  # If both fail, continue without transaction log
+                logger.error(f"Error sending balance notification to user {user['telegram_id']}: {e}")
+                # Don't fail the request if notification fails
             
-            conn.commit()
-            cursor.close()
-        
-        # Send notification to user via Telegram
-        try:
-            from telegram_helper import TelegramHelper
-            TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
-        except Exception as e:
-            logger.error(f"Error sending balance notification to user {user['telegram_id']}: {e}")
-            # Don't fail the request if notification fails
-        
-        message = f'{amount:,} تومان به موجودی کاربر اضافه شد' if balance_type == 'add' else f'{amount:,} تومان از موجودی کاربر کسر شد'
-        return jsonify({'success': True, 'message': message, 'new_balance': new_balance})
+            # Get updated balance
+            updated_user = db_instance.get_user_by_id(user_id)
+            new_balance_val = updated_user.get('balance', 0) if updated_user else new_balance
+            
+            message = f'{amount:,} تومان به موجودی کاربر اضافه شد' if balance_type == 'add' else f'{amount:,} تومان از موجودی کاربر کسر شد'
+            return jsonify({'success': True, 'message': message, 'new_balance': new_balance_val})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در بروزرسانی موجودی'}), 500
+
     except Exception as e:
         logger.error(f"Error updating user balance: {e}")
         import traceback
@@ -8571,6 +8575,33 @@ def update_theme():
     except Exception as e:
         return secure_error_response(e)
 
+@app.route('/admin/settings/backup', methods=['GET', 'POST'])
+@admin_required
+def admin_backup_settings():
+    """Get or update backup settings"""
+    try:
+        from settings_manager import SettingsManager
+        settings_mgr = SettingsManager()
+        
+        if request.method == 'GET':
+            enabled = settings_mgr.get_setting('auto_backup_enabled', False)
+            frequency = settings_mgr.get_setting('auto_backup_frequency', 24)
+            return jsonify({'success': True, 'enabled': enabled, 'frequency': frequency})
+            
+        elif request.method == 'POST':
+            data = request.json
+            enabled = data.get('enabled', False)
+            frequency = data.get('frequency', 24)
+            
+            settings_mgr.set_setting('auto_backup_enabled', enabled, description="Enable Auto Backup", user_id=session.get('user_id'))
+            settings_mgr.set_setting('auto_backup_frequency', frequency, description="Auto Backup Frequency (Hours)", user_id=session.get('user_id'))
+            
+            return jsonify({'success': True, 'message': 'تنظیمات بکاپ با موفقیت ذخیره شد'})
+            
+    except Exception as e:
+        logger.error(f"Error managing backup settings: {e}")
+        return secure_error_response(e)
+
 
 
 # ==================== WHEEL OF FORTUNE ROUTES ====================
@@ -8611,8 +8642,14 @@ def api_wheel_config():
         config = lottery_system.get_wheel_config()
         
         # Check if user can spin
-        user_id = session.get('telegram_id')
-        can_spin, message = lottery_system.can_spin(user_id)
+        user_id = session.get('user_id')
+        user = db_instance.get_user(user_id)
+        telegram_id = user['telegram_id'] if user else None
+        
+        if not telegram_id:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+            
+        can_spin, message = lottery_system.can_spin(telegram_id)
         
         return jsonify({
             'success': True,
@@ -8634,9 +8671,14 @@ def api_wheel_spin():
         db_instance = get_db()
         lottery_system.set_database(db_instance)
         
-        user_id = session.get('telegram_id')
+        user_id = session.get('user_id')
+        user = db_instance.get_user(user_id)
+        telegram_id = user['telegram_id'] if user else None
         
-        success, result = lottery_system.spin_wheel(user_id)
+        if not telegram_id:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+        
+        success, result = lottery_system.spin_wheel(telegram_id)
         
         if success:
             return jsonify({

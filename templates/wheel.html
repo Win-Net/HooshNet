@@ -32,14 +32,18 @@
 
     .wheel-pointer {
         position: absolute;
-        top: -15px;
+        top: 20px;
+        /* Adjusted for wrapper relative position */
         left: 50%;
         transform: translateX(-50%);
-        width: 30px;
-        height: 40px;
+        width: 40px;
+        /* Slightly larger */
+        height: 50px;
+        /* Slightly larger */
         background: #FF5252;
         clip-path: polygon(50% 100%, 0 0, 100% 0);
-        z-index: 10;
+        z-index: 20;
+        /* Higher z-index */
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
     }
 
@@ -193,9 +197,10 @@
         <p class="text-muted">شانس خودت رو امتحان کن و جایزه ببر!</p>
     </div>
 
-    <div class="wheel-wrapper" style="text-align: center; padding: 20px 0;">
+    <div class="wheel-wrapper" style="text-align: center; padding: 20px 0; position: relative;">
+        <div class="wheel-pointer"></div>
         <div class="wheel-container" id="wheelContainer">
-            <div class="wheel-pointer"></div>
+            <!-- Pointer moved outside -->
             <canvas id="wheelCanvas" class="wheel-canvas" width="640" height="640"></canvas>
             <div class="wheel-center">
                 <i class="fas fa-star" style="color: #FFD700;"></i>
@@ -277,6 +282,17 @@
         }
     }
 
+    function toEnglishDigits(str) {
+        const persianNumbers = [/۰/g, /۱/g, /۲/g, /۳/g, /۴/g, /۵/g, /۶/g, /۷/g, /۸/g, /۹/g];
+        const arabicNumbers = [/٠/g, /١/g, /٢/g, /٣/g, /٤/g, /٥/g, /٦/g, /٧/g, /٨/g, /٩/g];
+        if (typeof str === 'string') {
+            for (let i = 0; i < 10; i++) {
+                str = str.replace(persianNumbers[i], i).replace(arabicNumbers[i], i);
+            }
+        }
+        return str;
+    }
+
     function drawWheel() {
         if (!prizes.length) return;
 
@@ -305,10 +321,13 @@
             ctx.rotate(angle + arc / 2);
             ctx.textAlign = "right";
             ctx.fillStyle = "#fff";
-            ctx.font = "bold 24px Vazir, Arial";
-            ctx.shadowColor = "rgba(0,0,0,0.5)";
-            ctx.shadowBlur = 4;
-            ctx.fillText(prize.label, radius - 40, 10);
+            ctx.font = "bold 36px Vazir, Arial"; // Increased font size
+            ctx.shadowColor = "rgba(0,0,0,0.8)"; // Stronger shadow
+            ctx.shadowBlur = 6;
+
+            // Convert to English digits
+            const label = toEnglishDigits(prize.label);
+            ctx.fillText(label, radius - 50, 12);
 
             // Draw icon/emoji if available
             // ctx.font = "30px Arial";
@@ -361,19 +380,32 @@
 
     function spinTo(winnerIndex, result) {
         const arc = 360 / prizes.length;
-        // Calculate target rotation to align winner with pointer (top)
-        // Pointer is at -90deg (top). 
-        // We need to rotate the wheel so that the winner segment is at the top.
-        // Winner segment starts at winnerIndex * arc and ends at (winnerIndex + 1) * arc
-        // Center of winner segment is (winnerIndex + 0.5) * arc
-        // We want this center to be at -90deg (270deg)
+        // Calculate the target angle for the winner to be at the top (270 degrees or -90 degrees)
+        // The wheel starts with index 0 at -90 degrees.
+        // To bring index i to the top, we need to rotate the wheel such that the center of segment i is at -90.
+        // Segment i center is at: -90 + (i + 0.5) * arc
+        // Required rotation (theta) satisfies: (-90 + (i + 0.5) * arc) + theta = -90 (modulo 360)
+        // So theta = -(i + 0.5) * arc
+        // In positive degrees (clockwise): theta = 360 - ((i + 0.5) * arc) % 360
 
-        const winnerCenterAngle = (winnerIndex + 0.5) * arc;
-        const targetRotation = 360 * 5 + (270 - winnerCenterAngle); // 5 full spins + alignment
+        const targetAngle = (360 - (winnerIndex + 0.5) * arc) % 360;
 
-        // Add some randomness within the segment
+        // Calculate how much we need to rotate from current position
+        const currentMod = currentRotation % 360;
+        let rotationNeeded = targetAngle - currentMod;
+
+        // Ensure we rotate clockwise
+        if (rotationNeeded < 0) {
+            rotationNeeded += 360;
+        }
+
+        // Add minimal spins (5 full spins)
+        const totalRotation = rotationNeeded + (5 * 360);
+
+        // Add randomness within the segment (keep it safe, 80% of arc width)
         const randomOffset = (Math.random() - 0.5) * (arc * 0.8);
-        const finalRotation = currentRotation + targetRotation + randomOffset;
+
+        const finalRotation = currentRotation + totalRotation + randomOffset;
 
         // CSS Transition
         wheelContainer.style.transition = 'transform 5s cubic-bezier(0.17, 0.67, 0.12, 0.99)';

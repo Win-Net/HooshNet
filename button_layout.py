@@ -616,7 +616,6 @@ class ProfessionalButtonLayout:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    @staticmethod
     def create_admin_panel(webapp_url: str = None, bot_name: str = None, admin_role=None) -> InlineKeyboardMarkup:
         """Create professional admin panel with role-based access
         

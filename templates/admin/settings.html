@@ -126,7 +126,7 @@
                 style="margin-bottom: var(--sp-md); padding-bottom: var(--sp-md); border-bottom: 1px solid var(--border-color);">
                 <div style="font-weight: 800; display: flex; align-items: center; gap: var(--sp-sm);">
                     <i class="fas fa-database" style="color: var(--p-info);"></i>
-                    تنظیمات دیتابیس
+                    تنظیمات دیتابیس و بکاپ
                 </div>
             </div>
 
@@ -145,22 +145,158 @@
                     <span class="badge badge-success">متصل</span>
                 </div>
 
-                <div class="setting-item">
-                    <div style="display: flex; gap: var(--sp-md); align-items: center;">
-                        <div
-                            style="width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--p-bg-hover); display: flex; align-items: center; justify-content: center; color: var(--p-text-muted);">
-                            <i class="fas fa-save"></i>
-                        </div>
-                        <div>
-                            <div style="font-weight: 700;">بکاپ خودکار</div>
-                            <div style="font-size: 0.8rem; color: var(--p-text-muted);">بکاپ‌گیری روزانه از دیتابیس
+                <div class="setting-item" style="flex-direction: column; align-items: stretch; gap: var(--sp-md);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: var(--sp-md); align-items: center;">
+                            <div
+                                style="width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--p-bg-hover); display: flex; align-items: center; justify-content: center; color: var(--p-text-muted);">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 700;">بکاپ خودکار</div>
+                                <div style="font-size: 0.8rem; color: var(--p-text-muted);">تنظیمات تهیه نسخه پشتیبان
+                                </div>
                             </div>
                         </div>
+                        <label class="switch">
+                            <input type="checkbox" id="autoBackupToggle" onchange="toggleAutoBackup()">
+                            <span class="slider round"></span>
+                        </label>
                     </div>
-                    <span class="badge badge-success">فعال</span>
+
+                    <div id="backupSettings"
+                        style="display: none; padding-top: var(--sp-sm); border-top: 1px solid var(--border-color);">
+                        <div
+                            style="display: grid; grid-template-columns: 1fr auto; gap: var(--sp-md); align-items: center;">
+                            <label style="font-size: 0.9rem;">بازه‌ی زمانی بکاپ‌گیری:</label>
+                            <select id="backupFrequency" onchange="saveBackupSettings()"
+                                style="padding: 5px 10px; border-radius: 5px; background: var(--p-bg-card); color: var(--p-text-main); border: 1px solid var(--border-color);">
+                                <option value="1">هر ۱ ساعت</option>
+                                <option value="6">هر ۶ ساعت</option>
+                                <option value="12">هر ۱۲ ساعت</option>
+                                <option value="24">روزانه (۲۴ ساعت)</option>
+                                <option value="168">هفتگی</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <script>
+            // Load initial settings
+            document.addEventListener('DOMContentLoaded', loadBackupSettings);
+
+            async function loadBackupSettings() {
+                try {
+                    const response = await fetch('/admin/settings/backup');
+                    const data = await response.json();
+                    if (data.success) {
+                        document.getElementById('autoBackupToggle').checked = data.enabled;
+                        document.getElementById('backupFrequency').value = data.frequency || 24;
+                        toggleBackupVisibility(data.enabled);
+                    }
+                } catch (error) {
+                    console.error('Error loading backup settings:', error);
+                }
+            }
+
+            function toggleBackupVisibility(enabled) {
+                const settingsDiv = document.getElementById('backupSettings');
+                settingsDiv.style.display = enabled ? 'block' : 'none';
+            }
+
+            async function toggleAutoBackup() {
+                const enabled = document.getElementById('autoBackupToggle').checked;
+                toggleBackupVisibility(enabled);
+                await saveBackupSettings();
+            }
+
+            async function saveBackupSettings() {
+                const enabled = document.getElementById('autoBackupToggle').checked;
+                const frequency = document.getElementById('backupFrequency').value;
+
+                try {
+                    const response = await fetch('/admin/settings/backup', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            enabled: enabled,
+                            frequency: parseInt(frequency)
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        showToast('تنظیمات بکاپ ذخیره شد', 'success');
+                    } else {
+                        showToast('خطا در ذخیره تنظیمات', 'error');
+                    }
+                } catch (error) {
+                    showToast('خطا در ارتباط با سرور', 'error');
+                }
+            }
+        </script>
+
+        <style>
+            /* Switch styles */
+            .switch {
+                position: relative;
+                display: inline-block;
+                width: 50px;
+                height: 24px;
+            }
+
+            .switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+
+            .slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: #ccc;
+                transition: .4s;
+            }
+
+            .slider:before {
+                position: absolute;
+                content: "";
+                height: 16px;
+                width: 16px;
+                left: 4px;
+                bottom: 4px;
+                background-color: white;
+                transition: .4s;
+            }
+
+            input:checked+.slider {
+                background-color: var(--p-success);
+            }
+
+            input:focus+.slider {
+                box-shadow: 0 0 1px var(--p-success);
+            }
+
+            input:checked+.slider:before {
+                transform: translateX(26px);
+            }
+
+            .slider.round {
+                border-radius: 24px;
+            }
+
+            .slider.round:before {
+                border-radius: 50%;
+            }
+        </style>
 
         <!-- System Info -->
         <div class="card">

@@ -1,0 +1,43 @@
+services:
+  vpn-bot:
+    build: .
+    container_name: vpn-bot
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - ./backups:/app/backups
+      - ./database_backups:/app/database_backups
+      - ./logs:/app/logs
+      - /etc/letsencrypt:/etc/letsencrypt
+      - ./entrypoint.sh:/entrypoint.sh
+    environment:
+      - MYSQL_HOST=vpn-db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=vpn_bot
+      - MYSQL_PASSWORD=${DB_PASSWORD:-vpn_bot_password}
+      - MYSQL_DATABASE=vpn_bot
+      - USE_HTTPS=true
+    depends_on:
+      - db
+    env_file:
+      - .env
+
+  db:
+    image: mysql:8.0
+    container_name: vpn-db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-root_password}
+      - MYSQL_DATABASE=vpn_bot
+      - MYSQL_USER=vpn_bot
+      - MYSQL_PASSWORD=${DB_PASSWORD:-vpn_bot_password}
+    volumes:
+      - db_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+
+volumes:
+  db_data:

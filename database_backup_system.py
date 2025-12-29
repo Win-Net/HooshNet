@@ -32,6 +32,7 @@ class DatabaseBackupManager:
             bot: Telegram Bot instance (optional, for auto-backups)
             bot_config: Bot configuration dict (optional)
         """
+        self.db_manager = db_manager
         self.db_config = db_manager.db_config
         self.bot = bot
         self.bot_config = bot_config or {}
@@ -392,27 +393,49 @@ class DatabaseBackupManager:
     async def start_auto_backup(self, interval_hours: int = 1):
         """
         Start automatic backup scheduler
-        
-        Args:
-            interval_hours: Hours between backups (default: 1)
         """
-        if not self.enabled:
-            logger.warning(f"⚠️ Backup system disabled for bot '{self.bot_name}' - not starting scheduler")
-            return
+        logger.info(f"🚀 Starting automatic backup scheduler for bot '{self.bot_name}'")
         
-        logger.info(f"🚀 Starting automatic backup scheduler for bot '{self.bot_name}' (interval: {interval_hours} hours)")
-        
-        interval_seconds = interval_hours * 3600
+        from settings_manager import SettingsManager
+        # Initialize SettingsManager with the existing db_manager
+        settings_mgr = SettingsManager(self.db_manager)
         
         while True:
             try:
-                await self.create_and_send_backup()
-                logger.info(f"⏰ Next backup scheduled in {interval_hours} hour(s)")
-                await asyncio.sleep(interval_seconds)
+                # Reload settings
+                enabled = settings_mgr.get_setting('auto_backup_enabled', False)
+                frequency_hours = settings_mgr.get_setting('auto_backup_frequency', 24)
+                last_backup_str = settings_mgr.get_setting('last_auto_backup_time')
+                
+                if not enabled:
+                    # Check every 10 minutes if enabled
+                    await asyncio.sleep(600) 
+                    continue
+                
+                should_backup = False
+                if not last_backup_str:
+                    should_backup = True
+                else:
+                    try:
+                        last_backup = datetime.fromisoformat(last_backup_str)
+                        # Check if enough time has passed
+                        if (datetime.now() - last_backup).total_seconds() >= frequency_hours * 3600:
+                            should_backup = True
+                    except:
+                        should_backup = True
+                
+                if should_backup:
+                    logger.info(f"⏰ Starting scheduled backup (Frequency: {frequency_hours}h)...")
+                    if await self.create_and_send_backup():
+                        settings_mgr.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
+                
+                # Check every 10 minutes
+                await asyncio.sleep(600)
+                
             except Exception as e:
                 logger.error(f"❌ Error in backup scheduler: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
                 # Wait before retrying
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
+                await asyncio.sleep(60)
 
