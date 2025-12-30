@@ -50,6 +50,16 @@ class ProfessionalDatabaseManager:
         # Initialize database schema
         self.init_database()
         
+        # Seed default texts
+        try:
+            from text_manager import TextManager
+            text_manager = TextManager(self)
+            count = text_manager.initialize_default_texts()
+            if count > 0:
+                logger.info(f"✅ Seeded {count} default bot texts")
+        except Exception as e:
+            logger.error(f"❌ Error seeding default texts: {e}")
+        
         # Verify connection pool is using correct database
         pool = ProfessionalDatabaseManager._connection_pools.get(self.database_name)
         if pool:
@@ -228,11 +238,21 @@ class ProfessionalDatabaseManager:
                         subscription_url TEXT,
                         default_protocol VARCHAR(50) DEFAULT 'vless',
                         sale_type VARCHAR(50) DEFAULT 'gigabyte',
+                        delivery_method VARCHAR(50) DEFAULT 'subscription_link',
                         extra_config JSON,
                         notes TEXT
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
 
+                # Add delivery_method column if it doesn't exist (migration)
+                try:
+                    cursor.execute("SHOW COLUMNS FROM panels LIKE 'delivery_method'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE panels ADD COLUMN delivery_method VARCHAR(50) DEFAULT 'subscription_link'")
+                        logger.info("✅ Added delivery_method column to panels table")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error checking/adding delivery_method column: {e}")
+                
                 # Create panel_inbounds table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS panel_inbounds (
@@ -1638,7 +1658,7 @@ class ProfessionalDatabaseManager:
             logger.error(f"Error adding balance: {e}")
             return False
     
-    def deduct_balance(self, user_id: int, amount: int, transaction_type: str, invoice_id: int = None) -> bool:
+    def deduct_balance(self, user_id: int, amount: int, transaction_type: str, invoice_id: int = None, description: str = None) -> bool:
         """Deduct balance from user (using Internal ID)"""
         try:
             with self.get_connection() as conn:
@@ -1648,7 +1668,9 @@ class ProfessionalDatabaseManager:
                 cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount, user_id))
                 
                 # Log transaction
-                description = f"Payment for invoice #{invoice_id}" if invoice_id else "Balance deduction"
+                if not description:
+                    description = f"Payment for invoice #{invoice_id}" if invoice_id else "Balance deduction"
+                
                 cursor.execute('''
                     INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
                     VALUES (%s, %s, %s, %s)
@@ -1711,7 +1733,7 @@ class ProfessionalDatabaseManager:
     def add_panel(self, name: str, url: str, username: str, password: str, 
                   api_endpoint: str, default_inbound_id: int = None, price_per_gb: int = 0,
                   subscription_url: str = None, panel_type: str = '3x-ui', default_protocol: str = 'vless',
-                  sale_type: str = 'gigabyte', extra_config: dict = None) -> int:
+                  sale_type: str = 'gigabyte', extra_config: dict = None, delivery_method: str = 'subscription_link') -> int:
         """Add a new panel"""
         try:
             with self.get_connection() as conn:
@@ -1721,9 +1743,9 @@ class ProfessionalDatabaseManager:
                 extra_config_json = json.dumps(extra_config) if extra_config else None
                 
                 cursor.execute('''
-                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config_json))
+                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config, delivery_method)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config_json, delivery_method))
                 
                 panel_id = cursor.lastrowid
                 conn.commit()
@@ -1769,7 +1791,8 @@ class ProfessionalDatabaseManager:
                      username: str = None, password: str = None, 
                      api_endpoint: str = None, price_per_gb: int = None,
                      subscription_url: str = None, panel_type: str = None, default_protocol: str = None,
-                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None) -> bool:
+                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None,
+                     delivery_method: str = None) -> bool:
         """Update panel information"""
         try:
             with self.get_connection() as conn:
@@ -1815,6 +1838,9 @@ class ProfessionalDatabaseManager:
                 if default_inbound_id is not None:
                     updates.append("default_inbound_id = %s")
                     params.append(default_inbound_id)
+                if delivery_method is not None:
+                    updates.append("delivery_method = %s")
+                    params.append(delivery_method)
                 
                 if not updates:
                     return True  # Nothing to update
@@ -5005,6 +5031,24 @@ class ProfessionalDatabaseManager:
         except Exception as e:
             logger.error(f"Error getting ticket replies: {e}")
             return []
+
+    def check_duplicate_ticket(self, user_id: int, message_text: str, time_window_minutes: int = 5) -> bool:
+        """Check if a similar ticket exists from the user within the time window"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT id FROM tickets 
+                    WHERE user_id = %s 
+                    AND message = %s 
+                    AND created_at > NOW() - INTERVAL %s MINUTE
+                    AND status != 'closed'
+                ''', (user_id, message_text, time_window_minutes))
+                result = cursor.fetchone()
+                return result is not None
+        except Exception as e:
+            logger.error(f"Error checking duplicate ticket: {e}")
+            return False
     
     def add_ticket_reply(self, ticket_id: int, user_id: int, message: str, is_admin: bool = False) -> Optional[int]:
         """Add a reply to a ticket"""

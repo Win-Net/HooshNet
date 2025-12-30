@@ -471,7 +471,8 @@ def detect_attack_patterns(path: str) -> Tuple[bool, str]:
         '.env', '.git', '.svn', '.hg', '.bzr',  # Version control
         '.sql', '.db', '.sqlite', '.sqlite3',  # Databases
         'config.yaml', 'config.yml', 'docker-compose',  # Config files
-        'credentials', 'secrets', 'private', 'backup',  # Sensitive names
+        'credentials', 'secrets', 'private',  # Sensitive names
+        '.backup', 'backup.sql', 'backup.zip', 'backup.tar', 'backup.tgz',  # Backup files
         '.pem', '.key', '.crt', '.p12', '.pfx',  # Certificates
         'phpinfo', 'info.php', 'test.php',  # Info disclosure
         'admin.php', 'login.php', 'config.php',  # Admin files
@@ -544,6 +545,22 @@ def secure_before_request():
     
     # Get client IP
     client_ip = get_client_ip()
+    
+    # Whitelisted IPs (Localhost only)
+    WHITELISTED_IPS = ['127.0.0.1']
+    
+    # CRITICAL: Allow Admin/Reseller Access via Session or Whitelist
+    # If user has a valid admin session OR is whitelisted, bypass IP blocking and unblock if needed
+    is_whitelisted = client_ip in WHITELISTED_IPS
+    has_valid_session = session.get('admin_logged_in') or session.get('reseller_logged_in')
+    
+    if is_whitelisted or has_valid_session:
+        if is_ip_blocked(client_ip):
+            logger.info(f"🔓 Unblocking IP {client_ip} because of valid session or whitelist")
+            if client_ip in _blocked_ips:
+                del _blocked_ips[client_ip]
+        # Skip further checks for whitelisted/admin users to prevent accidental blocking
+        return None
     
     # Check if IP is blocked
     if is_ip_blocked(client_ip):

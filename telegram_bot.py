@@ -30,8 +30,6 @@ from config import BOT_CONFIG, CLIENT_DEFAULTS, DEFAULT_PANEL_CONFIG, WEBAPP_CON
 from traffic_monitor import TrafficMonitor
 from persian_datetime import PersianDateTime, format_db_datetime, format_db_date
 from user_info_updater import auto_update_user_info, ensure_user_updated
-from user_info_updater import auto_update_user_info, ensure_user_updated
-from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
 from system_manager import SystemManager
 from reseller_panel.models import ResellerManager
 import psutil
@@ -426,13 +424,6 @@ class VPNBot:
             )
             return
         
-        # Check channel membership (except for admin)
-        if user_id != self.bot_config['admin_id']:
-            is_member = await check_channel_membership(update, context, bot_config=self.bot_config)
-            if not is_member:
-                await show_force_join_message(update, context, bot_config=self.bot_config)
-                return
-        
         # Process user registration with referral code (if new user)
         # For existing users, this will just update activity
         is_new_user = await self.process_user_registration_with_referral(user_id, user, context, referral_code)
@@ -704,100 +695,8 @@ class VPNBot:
             await query.edit_message_text("🚫 شما مسدود شده‌اید و دسترسی به ربات ندارید.")
             return
         
-        # Check channel membership for all callbacks except check_channel_join itself
-        if data != "check_channel_join":
-            is_member = await check_channel_membership(update, context, bot_config=self.bot_config)
-            if not is_member:
-                await show_force_join_message(update, context, bot_config=self.bot_config)
-                return
-        
         try:
-            if data == "check_channel_join":
-                # Re-check membership
-                is_member = await check_channel_membership(update, context, bot_config=self.bot_config)
-                if is_member:
-                    # User is now a member, process registration with stored referral code
-                    user_id = update.effective_user.id
-                    user = update.effective_user
-                    
-                    # Check if user already exists (to avoid duplicate registration)
-                    existing_user = self.db.get_user(user_id)
-                    is_already_registered = existing_user is not None
-                    
-                    # Get stored referral code from user_data
-                    stored_referral_code = None
-                    if context.user_data and 'pending_referral_code' in context.user_data:
-                        stored_referral_code = context.user_data['pending_referral_code']
-                        logger.info(f"📝 Processing stored referral code for user {user_id}: {stored_referral_code}")
-                        # Clear stored referral code after use
-                        del context.user_data['pending_referral_code']
-                    
-                    # Process user registration with referral code (only if not already registered)
-                    if not is_already_registered:
-                        await self.process_user_registration_with_referral(user_id, user, context, stored_referral_code)
-                    else:
-                        logger.info(f"User {user_id} already registered, skipping registration but processing referral if needed")
-                        # If user already exists but has a stored referral code, we still need to check
-                        # But since they're already registered, we can't process new referral
-                        # (Referrals are only processed during initial registration)
-                    
-                    # Show success message and main menu
-                    user_data = self.db.get_user(user_id)
-                    # Check if user is admin - check both database and config
-                    is_admin_by_config = (user_id == self.bot_config['admin_id'])
-                    is_admin_by_db = self.db.is_admin(user_id)
-                    is_admin = is_admin_by_config or is_admin_by_db
-                    # Ensure database name is set in thread-local storage
-                    MessageTemplates.set_database_name(self.db.database_name)
-                    welcome_text = MessageTemplates.format_welcome_message(
-                        user_data or {}, is_admin
-                    )
-                    
-                    # Get webapp URL with bot name prefix
-                    base_url = self.bot_config.get('webapp_url', 'http://localhost:443')
-                    bot_name = self.bot_config.get('bot_name', '')
-                    
-                    reply_markup = ButtonLayout.create_main_menu(
-                        is_admin=is_admin,
-                        user_balance=user_data.get('balance', 0) if user_data else 0,
-                        user_id=user_id,
-                        webapp_url=base_url,
-                        bot_name=bot_name,
-                        db=self.db
-                    )
-                    
-                    webapp_markup = ButtonLayout.create_webapp_keyboard(
-                        webapp_url=base_url,
-                        bot_name=bot_name
-                    )
-                    
-                    # Delete the "Check Join" message
-                    try:
-                        await query.delete_message()
-                    except:
-                        pass
-                    
-                    # Send welcome message with Reply Keyboard
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=f"✅ تبریک! شما با موفقیت عضو کانال شدید.\n\n{welcome_text}",
-                        reply_markup=reply_markup,
-                        parse_mode='Markdown'
-                    )
-                    
-                    # Send Web App button
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text="🌐 **ورود به پنل کاربری پیشرفته (وب اپلیکیشن)** 👇",
-                        reply_markup=webapp_markup,
-                        parse_mode='Markdown'
-                    )
-
-                else:
-                    # User is not a member yet
-                    await show_force_join_message(update, context, bot_config=self.bot_config)
-                return
-            elif data == "show_inbounds":
+            if data == "show_inbounds":
                 await self.show_inbounds(update, context)
             elif data == "help":
                 await self.show_help(update, context)
@@ -928,6 +827,10 @@ class VPNBot:
             elif data.startswith("select_inbound_for_panel_"):
                 inbound_id = int(data.split("_")[4])
                 await self.handle_inbound_selection_for_panel(update, context, inbound_id)
+            elif data.startswith("select_delivery_method_"):
+                # select_delivery_method_subscription_link or select_delivery_method_direct_configuration
+                delivery_method = data.replace("select_delivery_method_", "")
+                await self.handle_delivery_method_selection(update, context, delivery_method)
             elif data.startswith("select_inbound_"):
                 # Only admin can select inbounds directly (non-payment flow)
                 user_id = update.effective_user.id
@@ -4475,11 +4378,39 @@ class VPNBot:
                         sub_id=client.get('sub_id')  # Store sub_id in database
                     )
                 
-                # Get subscription link
-                subscription_link = client.get('subscription_link') or client.get('subscription_url', client.get('config_link', ''))
+                # Get panel details to check delivery method
+                panel = self.db.get_panel(panel_id)
+                delivery_method = panel.get('delivery_method', 'subscription_link') if panel else 'subscription_link'
                 
-                # Format success message
-                success_text = f"""
+                if delivery_method == 'direct_configuration':
+                    # Direct configuration delivery
+                    config_content = client.get('config_link') or client.get('subscription_link', 'کانفیگ یافت نشد')
+                    
+                    success_text = f"""
+✅ **کلاینت با موفقیت ایجاد شد!**
+
+**نام کلاینت:** `{text}`
+**پنل:** {client.get('panel_name', 'Unknown')}
+**پروتکل:** `{client.get('protocol', 'vmess')}`
+**مدت زمان:** نامحدود
+**حجم ترافیک:** نامحدود
+**تعداد اینباندها:** {client.get('created_on_inbounds', 0)}
+
+🔑 **کانفیگ اتصال:**
+```
+{config_content}
+```
+
+**نکات:**
+• کانفیگ بالا را کپی کرده و در برنامه VPN خود وارد کنید
+• برای پشتیبانی با ادمین تماس بگیرید
+"""
+                else:
+                    # Subscription link delivery
+                    subscription_link = client.get('subscription_link') or client.get('subscription_url', client.get('config_link', ''))
+                    
+                    # Format success message
+                    success_text = f"""
 ✅ **کلاینت با موفقیت ایجاد شد!**
 
 **نام کلاینت:** `{text}`
@@ -4497,8 +4428,7 @@ class VPNBot:
 **نکات:**
 • لینک سابسکریپشن را در برنامه VPN خود اضافه کنید
 • برای پشتیبانی با ادمین تماس بگیرید
-                """
-                
+"""                
                 keyboard = [
                     [InlineKeyboardButton("🛒 خرید جدید", callback_data="buy_service")],
                     [InlineKeyboardButton("📋 پنل", callback_data="user_panel")],
@@ -4912,26 +4842,54 @@ class VPNBot:
                 if client_id > 0:
                     logger.info(f"✅ Client saved to database with ID: {client_id}")
                     
-                    # Get subscription link
-                    subscription_link = client_data.get('subscription_link') or client_data.get('config_link') or client_data.get('subscription_url')
+                    # Check delivery method
+                    delivery_method = panel.get('delivery_method', 'subscription_link')
                     
-                    # If still empty, try to construct it from panel subscription_url
-                    if not subscription_link and client_data.get('sub_id'):
-                        sub_url = panel.get('subscription_url', '')
-                        if sub_url:
-                            # Clean up sub_url
-                            if sub_url.endswith('/sub') or sub_url.endswith('/sub/'):
-                                base_url = sub_url.rstrip('/')
-                                subscription_link = f"{base_url}/{client_data['sub_id']}"
-                            elif '/sub' in sub_url:
-                                subscription_link = f"{sub_url}/{client_data['sub_id']}"
-                            else:
-                                subscription_link = f"{sub_url}/sub/{client_data['sub_id']}"
-                            
-                            logger.info(f"✅ Constructed subscription link: {subscription_link}")
-                    
-                    # Format success message
-                    success_text = f"""
+                    if delivery_method == 'direct_configuration':
+                        # Direct configuration delivery
+                        config_content = client_data.get('config_link') or client_data.get('subscription_link', 'کانفیگ یافت نشد')
+                        
+                        success_text = f"""
+✅ **سرویس با موفقیت فعال شد!**
+
+**نام سرویس:** `{client_name}`
+**پنل:** {panel['name']}
+**محصول:** {product['name']}
+**حجم:** {product['volume_gb']} گیگابایت
+**مدت زمان:** {product['duration_days']} روز
+**پروتکل:** `{client_data.get('protocol', 'vless')}`
+
+🔑 **کانفیگ اتصال:**
+```
+{config_content}
+```
+
+**نکات:**
+• کانفیگ بالا را کپی کرده و در برنامه VPN خود وارد کنید (Import from Clipboard)
+• برای پشتیبانی با ادمین تماس بگیرید
+"""
+                    else:
+                        # Subscription link delivery (Default)
+                        # Get subscription link
+                        subscription_link = client_data.get('subscription_link') or client_data.get('config_link') or client_data.get('subscription_url')
+                        
+                        # If still empty, try to construct it from panel subscription_url
+                        if not subscription_link and client_data.get('sub_id'):
+                            sub_url = panel.get('subscription_url', '')
+                            if sub_url:
+                                # Clean up sub_url
+                                if sub_url.endswith('/sub') or sub_url.endswith('/sub/'):
+                                    base_url = sub_url.rstrip('/')
+                                    subscription_link = f"{base_url}/{client_data['sub_id']}"
+                                elif '/sub' in sub_url:
+                                    subscription_link = f"{sub_url}/{client_data['sub_id']}"
+                                else:
+                                    subscription_link = f"{sub_url}/sub/{client_data['sub_id']}"
+                                
+                                logger.info(f"✅ Constructed subscription link: {subscription_link}")
+                        
+                        # Format success message
+                        success_text = f"""
 ✅ **سرویس با موفقیت فعال شد!**
 
 **نام سرویس:** `{client_name}`
@@ -4948,8 +4906,8 @@ class VPNBot:
 
 **نکات:**
 • لینک سابسکریپشن را در برنامه VPN خود اضافه کنید
-• برای مشاهده سرویس‌های خود از پنل کاربری استفاده کنید
-                    """
+• برای آپدیت لیست سرورها، لینک را در برنامه Update کنید
+"""
                     
                     keyboard = [
                         [InlineKeyboardButton("📊 پنل کاربری", callback_data="user_panel")],
@@ -6494,6 +6452,42 @@ class VPNBot:
         query = update.callback_query
         await query.answer()
         
+        # Store inbound ID
+        context.user_data['panel_inbound_id'] = inbound_id
+        
+        panel_type = context.user_data.get('panel_type', '3x-ui')
+        
+        # For 3x-ui panels, ask for delivery method
+        if panel_type == '3x-ui':
+            keyboard = [
+                [InlineKeyboardButton("🔗 لینک سابسکریپشن (Subscription Link)", callback_data="select_delivery_method_subscription_link")],
+                [InlineKeyboardButton("📝 کانفیگ مستقیم (Direct Configuration)", callback_data="select_delivery_method_direct_configuration")],
+                [InlineKeyboardButton("❌ انصراف", callback_data="manage_panels")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                "📦 **انتخاب روش تحویل سرویس**\n\n"
+                "لطفاً مشخص کنید که سرویس‌ها چگونه به کاربران تحویل داده شوند:\n\n"
+                "🔹 **لینک سابسکریپشن:** کاربر یک لینک دریافت می‌کند که حاوی تمام کانفیگ‌هاست (روش معمول).\n"
+                "🔹 **کانفیگ مستقیم:** کاربر خود کانفیگ (vless/vmess/...) را مستقیماً دریافت می‌کند (مناسب برای شرایط خاص).\n\n"
+                "👇 **یکی از گزینه‌های زیر را انتخاب کنید:**",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            return
+            
+        # For other panels, default to subscription link and save
+        await self.save_new_panel(update, context, 'subscription_link')
+
+    async def handle_delivery_method_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, delivery_method: str):
+        """Handle delivery method selection and save panel"""
+        await self.save_new_panel(update, context, delivery_method)
+
+    async def save_new_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, delivery_method: str):
+        """Save the new panel to database"""
+        query = update.callback_query
+        
         try:
             # Get panel data from user session
             panel_name = context.user_data.get('panel_name')
@@ -6504,6 +6498,7 @@ class VPNBot:
             panel_price = context.user_data.get('panel_price')
             panel_type = context.user_data.get('panel_type', '3x-ui')
             panel_sale_type = context.user_data.get('panel_sale_type', 'gigabyte')
+            inbound_id = context.user_data.get('panel_inbound_id')
             
             if not all([panel_name, panel_url, panel_username, panel_password, panel_price]):
                 await query.edit_message_text("❌ اطلاعات پنل ناقص است.")
@@ -6520,7 +6515,8 @@ class VPNBot:
                 price_per_gb=panel_price,
                 subscription_url=panel_subscription_url,
                 panel_type=panel_type,
-                sale_type=panel_sale_type
+                sale_type=panel_sale_type,
+                delivery_method=delivery_method
             )
             
             if success:
@@ -6529,10 +6525,15 @@ class VPNBot:
                     'rebecca': 'ربکا',
                     '3x-ui': '3x-ui'
                 }.get(panel_type, panel_type)
+                
+                delivery_method_persian = "لینک سابسکریپشن" if delivery_method == 'subscription_link' else "کانفیگ مستقیم"
+                
                 sub_url_display = f"🔗 لینک سابسکریپشن: {panel_subscription_url}\n" if panel_subscription_url else ""
+                
                 await query.edit_message_text(
                     f"✅ پنل '{panel_name}' با موفقیت اضافه شد!\n\n"
                     f"📦 نوع پنل: {panel_type_persian}\n"
+                    f"🚚 روش تحویل: {delivery_method_persian}\n"
                     f"🔗 URL: {panel_url}\n"
                     f"👤 Username: {panel_username}\n"
                     f"{sub_url_display}"
@@ -6548,7 +6549,8 @@ class VPNBot:
                             'panel_name': panel_name,
                             'panel_url': panel_url,
                             'username': panel_username,
-                            'panel_type': panel_type
+                            'panel_type': panel_type,
+                            'delivery_method': delivery_method
                         }
                         admin_data = self.db.get_user(update.effective_user.id)
                         await self.reporting_system.send_report('panel_added', report_data, admin_data)
@@ -6564,7 +6566,7 @@ class VPNBot:
             context.user_data.clear()
             
         except Exception as e:
-            logger.error(f"Error handling inbound selection for panel: {e}")
+            logger.error(f"Error saving panel: {e}")
             await query.edit_message_text("❌ خطا در اضافه کردن پنل.")
     
     async def handle_add_panel_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7081,7 +7083,7 @@ class VPNBot:
                 await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
-            logger.error(f"Error handling admin panel: {e}")
+            logger.error(f"Error handling admin panel: {e}", exc_info=True)
             error_text = "❌ خطا در نمایش پنل مدیریت."
             if query:
                 await query.edit_message_text(error_text)
@@ -16656,7 +16658,7 @@ class VPNBot:
             # We can store the file_id in receipt_image column
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE invoices SET receipt_image = %s, payment_method = 'card' WHERE id = %s", (file_id, invoice_id))
+                cursor.execute("UPDATE invoices SET receipt_path = %s, payment_method = 'card' WHERE id = %s", (file_id, invoice_id))
                 conn.commit()
             
             await update.message.reply_text("✅ رسید شما دریافت شد و پس از تایید ادمین، موجودی شما افزایش می‌یابد/سرویس فعال می‌شود.")
@@ -17849,7 +17851,7 @@ class VPNBot:
             await query.edit_message_text("⏳ در حال ایجاد بکاپ...")
             try:
                 backup_manager = DatabaseBackupManager(self.db)
-                backup_file = backup_manager.create_backup()
+                backup_file = await backup_manager.create_backup()
                 
                 if backup_file:
                     await context.bot.send_document(
@@ -18752,6 +18754,11 @@ class VPNBot:
             from support_department import support_department_manager
             support_department_manager.set_database(self.db)
             
+            # Check for duplicate ticket
+            if self.db.check_duplicate_ticket(user_id, text):
+                await update.message.reply_text("⚠️ شما قبلاً یک تیکت با همین متن ثبت کرده‌اید. لطفاً منتظر پاسخ بمانید.")
+                return
+
             # Create ticket
             ticket_id = self.db.create_ticket(user_id, "پشتیبانی", text)
             
@@ -19456,6 +19463,12 @@ def main():
             # Send bot start report
             if bot.reporting_system:
                 await bot.reporting_system.report_bot_start()
+                
+            # Start auto-backup scheduler
+            if bot.backup_manager:
+                asyncio.create_task(bot.backup_manager.start_auto_backup(interval_hours=6))
+                logger.info("✅ Auto-backup scheduler started (every 6 hours)")
+                
         except Exception as e:
             logger.error(f"Failed in post_init: {e}")
     

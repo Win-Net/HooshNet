@@ -172,7 +172,7 @@
                 <input type="text" name="subscription_url" class="form-control" placeholder="https://sub.example.com">
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-md);">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-md);">
                 <div class="form-group">
                     <label class="form-label">قیمت هر گیگ (تومان)</label>
                     <input type="number" name="price_per_gb" class="form-control" value="0" min="0">
@@ -183,6 +183,13 @@
                         <option value="gigabyte">گیگابایتی</option>
                         <option value="plan">پلنی</option>
                         <option value="both">هر دو</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">روش تحویل</label>
+                    <select name="delivery_method" class="form-control" required>
+                        <option value="subscription_link">لینک سابسکریپشن</option>
+                        <option value="direct_configuration">کانفیگ مستقیم</option>
                     </select>
                 </div>
             </div>
@@ -274,7 +281,7 @@
                 <input type="text" name="subscription_url" class="form-control">
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-md);">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-md);">
                 <div class="form-group">
                     <label class="form-label">قیمت هر گیگ</label>
                     <input type="number" name="price_per_gb" class="form-control" min="0">
@@ -285,6 +292,13 @@
                         <option value="gigabyte">گیگابایتی</option>
                         <option value="plan">پلنی</option>
                         <option value="both">هر دو</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">روش تحویل</label>
+                    <select name="delivery_method" class="form-control" required>
+                        <option value="subscription_link">لینک سابسکریپشن</option>
+                        <option value="direct_configuration">کانفیگ مستقیم</option>
                     </select>
                 </div>
             </div>
@@ -798,6 +812,7 @@
             form.subscription_url.value = panel.subscription_url || '';
             form.price_per_gb.value = panel.price_per_gb || 0;
             form.sale_type.value = panel.sale_type || 'gigabyte';
+            form.delivery_method.value = panel.delivery_method || 'subscription_link';
 
             // Handle default_inbound_id for Rebecca
             if (panel.default_inbound_id) {

@@ -469,8 +469,8 @@ class UsernameGenerator:
         """Clean name for username (only alphanumeric)"""
         if not name:
             return ""
-        # Remove all non-alphanumeric characters
-        clean = re.sub(r'[^a-zA-Z0-9]', '', name)
+        # Remove all non-alphanumeric characters (allow underscore)
+        clean = re.sub(r'[^a-zA-Z0-9_]', '', name)
         return clean.upper() if clean else ""
     
     def _get_next_sequence(self, key: str) -> int:

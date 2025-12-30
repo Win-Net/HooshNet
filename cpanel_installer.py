@@ -76,9 +76,7 @@ def get_user_input():
     
     # Channel Configuration
     print(f"\n{Colors.HEADER}--- Channel Settings (Optional - Press Enter to skip) ---{Colors.ENDC}")
-    config['CHANNEL_ID'] = input(f"{Colors.BOLD}Enter Channel ID (e.g., @MyChannel):{Colors.ENDC} ").strip()
-    config['CHANNEL_LINK'] = input(f"{Colors.BOLD}Enter Channel Link (e.g., https://t.me/MyChannel):{Colors.ENDC} ").strip()
-    config['REPORTS_CHANNEL_ID'] = input(f"{Colors.BOLD}Enter Reports Channel ID (Numeric):{Colors.ENDC} ").strip()
+    config['REPORTS_CHANNEL_ID'] = input(f"{Colors.BOLD}Enter Reports Group ID (Numeric):{Colors.ENDC} ").strip()
     receipts_channel = input(f"{Colors.BOLD}Enter Receipts Channel ID (Numeric, optional - press Enter to skip):{Colors.ENDC} ").strip()
     config['RECEIPTS_CHANNEL_ID'] = receipts_channel if receipts_channel else '0'
     
@@ -124,9 +122,6 @@ ADMIN_ID={config['ADMIN_ID']}
 BOT_USERNAME={config['BOT_USERNAME']}
 
 # Channels
-# Channels
-CHANNEL_ID={config.get('CHANNEL_ID', '')}
-CHANNEL_LINK={config.get('CHANNEL_LINK', '')}
 REPORTS_CHANNEL_ID={config.get('REPORTS_CHANNEL_ID', '0')}
 RECEIPTS_CHANNEL_ID={config.get('RECEIPTS_CHANNEL_ID', '0')} 
 

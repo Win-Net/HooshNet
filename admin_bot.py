@@ -45,8 +45,6 @@ logger = logging.getLogger(__name__)
     CREATE_BOT_ADMIN_ID,
     CREATE_BOT_USERNAME,
     CREATE_BOT_REPORTS_CHANNEL,
-    CREATE_BOT_CHANNEL_ID,
-    CREATE_BOT_CHANNEL_LINK,
     CREATE_BOT_LICENSE,
     CREATE_BOT_DATABASE,
     CREATE_BOT_WEBAPP_PORT,
@@ -64,9 +62,7 @@ FIELD_NAMES = {
     'token': '🔑 توکن ربات',
     'admin_id': '👤 شناسه ادمین',
     'bot_username': '📱 یوزرنیم ربات',
-    'reports_channel_id': '📢 شناسه کانال گزارشات',
-    'channel_id': '🔗 یوزرنیم کانال',
-    'channel_link': '🔗 لینک کانال',
+    'reports_channel_id': '📢 شناسه گروه گزارشات',
     'starsefar_license': '⭐ لایسنس StarsOffer',
     'database_name': '💾 نام دیتابیس',
     'webapp_port': '🌐 پورت وب‌اپ',
@@ -76,7 +72,7 @@ FIELD_NAMES = {
 # Required fields for bot creation
 REQUIRED_FIELDS = [
     'token', 'admin_id', 'bot_username', 'reports_channel_id',
-    'channel_id', 'channel_link', 'starsefar_license', 'database_name'
+    'starsefar_license', 'database_name'
 ]
 
 # Optional fields
@@ -145,12 +141,6 @@ class AdminBot:
                 ],
                 CREATE_BOT_REPORTS_CHANNEL: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_bot_reports_channel)
-                ],
-                CREATE_BOT_CHANNEL_ID: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_bot_channel_id)
-                ],
-                CREATE_BOT_CHANNEL_LINK: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_bot_channel_link)
                 ],
                 CREATE_BOT_LICENSE: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_bot_license)
@@ -471,66 +461,10 @@ class AdminBot:
             return CREATE_BOT_REPORTS_CHANNEL
         
         self.user_sessions[user_id]['creating_bot']['reports_channel_id'] = channel_id
-        self.user_sessions[user_id]['creating_bot']['current_field'] = 'channel_id'
-        
-        text = (
-            f"✅ شناسه کانال گزارشات ثبت شد: {channel_id}\n\n"
-            f"لطفاً {FIELD_NAMES['channel_id']} را وارد کنید (بدون @):"
-        )
-        
-        keyboard = [[InlineKeyboardButton("❌ لغو", callback_data="cancel")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN
-        )
-        
-        return CREATE_BOT_CHANNEL_ID
-    
-    async def handle_create_bot_channel_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle channel ID input"""
-        user_id = update.effective_user.id
-        channel_id = update.message.text.strip().replace('@', '')
-        
-        if not channel_id:
-            await update.message.reply_text(
-                "❌ یوزرنیم کانال نمی‌تواند خالی باشد!\nلطفاً دوباره وارد کنید:"
-            )
-            return CREATE_BOT_CHANNEL_ID
-        
-        self.user_sessions[user_id]['creating_bot']['channel_id'] = channel_id
-        self.user_sessions[user_id]['creating_bot']['current_field'] = 'channel_link'
-        
-        text = (
-            f"✅ یوزرنیم کانال ثبت شد: @{channel_id}\n\n"
-            f"لطفاً {FIELD_NAMES['channel_link']} را وارد کنید:"
-        )
-        
-        keyboard = [[InlineKeyboardButton("❌ لغو", callback_data="cancel")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN
-        )
-        
-        return CREATE_BOT_CHANNEL_LINK
-    
-    async def handle_create_bot_channel_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle channel link input"""
-        user_id = update.effective_user.id
-        channel_link = update.message.text.strip()
-        
-        if not channel_link.startswith('http'):
-            await update.message.reply_text(
-                "❌ لینک باید با http یا https شروع شود!\nلطفاً دوباره وارد کنید:"
-            )
-            return CREATE_BOT_CHANNEL_LINK
-        
-        self.user_sessions[user_id]['creating_bot']['channel_link'] = channel_link
         self.user_sessions[user_id]['creating_bot']['current_field'] = 'starsefar_license'
         
         text = (
-            f"✅ لینک کانال ثبت شد\n\n"
+            f"✅ شناسه گروه گزارشات ثبت شد: {channel_id}\n\n"
             f"لطفاً {FIELD_NAMES['starsefar_license']} را وارد کنید:"
         )
         
@@ -542,6 +476,7 @@ class AdminBot:
         )
         
         return CREATE_BOT_LICENSE
+    
     
     async def handle_create_bot_license(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle license key input"""

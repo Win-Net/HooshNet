@@ -93,44 +93,56 @@ class LotterySystem:
             'daily_free_spins': 1,  # Free spins per day
             'cooldown_hours': 24,  # Hours between free spins
             'prizes': [
-                {'type': 'balance', 'value': 5000, 'weight': 20, 'label': '۵,۰۰۰ تومان', 'color': '#4CAF50'},
-                {'type': 'balance', 'value': 10000, 'weight': 15, 'label': '۱۰,۰۰۰ تومان', 'color': '#2196F3'},
-                {'type': 'balance', 'value': 25000, 'weight': 8, 'label': '۲۵,۰۰۰ تومان', 'color': '#9C27B0'},
-                {'type': 'balance', 'value': 50000, 'weight': 3, 'label': '۵۰,۰۰۰ تومان', 'color': '#FF9800'},
-                {'type': 'volume', 'value': 1, 'weight': 10, 'label': '۱ گیگابایت', 'color': '#00BCD4'},
-                {'type': 'volume', 'value': 5, 'weight': 5, 'label': '۵ گیگابایت', 'color': '#E91E63'},
-                {'type': 'time', 'value': 7, 'weight': 8, 'label': '۷ روز اضافی', 'color': '#795548'},
-                {'type': 'discount', 'value': 10, 'weight': 12, 'label': '۱۰٪ تخفیف', 'color': '#607D8B'},
-                {'type': 'discount', 'value': 20, 'weight': 6, 'label': '۲۰٪ تخفیف', 'color': '#3F51B5'},
-                {'type': 'nothing', 'value': 0, 'weight': 13, 'label': 'شانس بعدی! 🍀', 'color': '#9E9E9E'},
+                {'type': 'balance', 'value': 5000, 'weight': 20, 'label': '5,000 Tomans', 'color': '#4CAF50'},
+                {'type': 'balance', 'value': 10000, 'weight': 15, 'label': '10,000 Tomans', 'color': '#2196F3'},
+                {'type': 'balance', 'value': 25000, 'weight': 8, 'label': '25,000 Tomans', 'color': '#9C27B0'},
+                {'type': 'balance', 'value': 50000, 'weight': 3, 'label': '50,000 Tomans', 'color': '#FF9800'},
+                {'type': 'volume', 'value': 1, 'weight': 10, 'label': '1 GB', 'color': '#00BCD4'},
+                {'type': 'volume', 'value': 5, 'weight': 5, 'label': '5 GB', 'color': '#E91E63'},
+                {'type': 'time', 'value': 7, 'weight': 8, 'label': '7 Days', 'color': '#795548'},
+                {'type': 'discount', 'value': 10, 'weight': 12, 'label': '10% OFF', 'color': '#607D8B'},
+                {'type': 'discount', 'value': 20, 'weight': 6, 'label': '20% OFF', 'color': '#3F51B5'},
+                {'type': 'nothing', 'value': 0, 'weight': 13, 'label': 'Next Time! 🍀', 'color': '#9E9E9E'},
             ]
         }
     
-    # save_wheel_config is no longer needed as we use the admin panel API
-    
-    # ==================== Wheel Spin Logic ====================
-    
+    def count_spins_last_24h(self, telegram_id: int) -> int:
+        """Count spins in the last 24 hours"""
+        if not self.db:
+            return 0
+        
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT COUNT(*) as count FROM wheel_spins 
+                    WHERE user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                    AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                ''', (telegram_id,))
+                result = cursor.fetchone()
+                return result['count'] if result else 0
+        except Exception as e:
+            logger.error(f"Error counting spins: {e}")
+            return 0
+
     def can_spin(self, telegram_id: int) -> Tuple[bool, str]:
         """Check if user can spin the wheel"""
         if not self.db:
-            return False, "خطا در اتصال به دیتابیس"
-        
+            return False, "خطای پایگاه داده"
+            
         config = self.get_wheel_config()
         
         if not config.get('enabled', True):
             return False, "گردونه شانس در حال حاضر غیرفعال است"
         
-        # Check last spin time
-        last_spin = self._get_last_spin_time(telegram_id)
-        if last_spin:
-            cooldown_hours = config.get('cooldown_hours', 24)
-            time_since_spin = datetime.now() - last_spin
-            
-            if time_since_spin.total_seconds() < cooldown_hours * 3600:
-                remaining = timedelta(hours=cooldown_hours) - time_since_spin
-                hours = int(remaining.total_seconds() // 3600)
-                minutes = int((remaining.total_seconds() % 3600) // 60)
-                return False, f"تا چرخش بعدی: {hours} ساعت و {minutes} دقیقه"
+        # Check daily limit
+        daily_limit = config.get('daily_free_spins', 1)
+        spins_last_24h = self.count_spins_last_24h(telegram_id)
+        
+        if spins_last_24h >= daily_limit:
+            # Calculate time until next spin becomes available (approximate)
+            # Ideally we'd find the oldest spin in the 24h window and add 24h to it
+            return False, f"شما به سقف {daily_limit} چرخش در روز رسیده‌اید. لطفاً فردا امتحان کنید."
         
         # Check if user needs to pay
         spin_cost = config.get('spin_cost', 0)
@@ -280,22 +292,116 @@ class LotterySystem:
             logger.error(f"Error recording spin: {e}")
     
     def _add_volume_credit(self, telegram_id: int, gb_amount: int):
-        """Add volume credit to user"""
+        """Add volume credit to user, applying to active service if possible"""
         try:
+            # Try to find active service
+            user_id = self._get_user_id_by_telegram_id(telegram_id)
+            if not user_id:
+                return
+
+            services = self.db.get_all_user_services_for_volume(user_id)
+            if services:
+                # Apply to the first active service
+                service = services[0]
+                
+                # Import here to avoid circular imports
+                from admin_manager import AdminManager
+                admin_mgr = AdminManager(self.db)
+                panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
+                
+                if panel_mgr and panel_mgr.login():
+                    current_total = service.get('total_gb', 0) or 0
+                    new_total = current_total + gb_amount
+                    
+                    if panel_mgr.update_client_traffic(service['inbound_id'], service['client_uuid'], new_total):
+                        self.db.update_client_total_gb(service['id'], new_total)
+                        logger.info(f"Added {gb_amount}GB to service {service['id']} for user {telegram_id}")
+                        return
+
+            # Fallback: Store as credit
             current = self.db.get_setting(f'user_{telegram_id}_volume_credit') or 0
             new_credit = int(current) + gb_amount
             self.db.set_setting(f'user_{telegram_id}_volume_credit', str(new_credit))
+            logger.info(f"Stored {gb_amount}GB credit for user {telegram_id}")
+            
         except Exception as e:
             logger.error(f"Error adding volume credit: {e}")
     
     def _add_time_credit(self, telegram_id: int, days: int):
-        """Add time credit to user"""
+        """Add time credit to user, applying to active service if possible"""
         try:
+            # Try to find active service
+            user_id = self._get_user_id_by_telegram_id(telegram_id)
+            if not user_id:
+                return
+
+            services = self.db.get_all_user_services_for_volume(user_id)
+            if services:
+                service = services[0]
+                
+                from admin_manager import AdminManager
+                admin_mgr = AdminManager(self.db)
+                panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
+                
+                if panel_mgr and panel_mgr.login():
+                    # Calculate new expiration
+                    current_expires = service.get('expires_at')
+                    if current_expires:
+                        if isinstance(current_expires, str):
+                            current_expires_dt = datetime.fromisoformat(current_expires.replace('Z', '+00:00'))
+                        else:
+                            current_expires_dt = current_expires
+                    else:
+                        current_expires_dt = datetime.now()
+                    
+                    new_expires = current_expires_dt + timedelta(days=days)
+                    expires_timestamp = int(new_expires.timestamp())
+                    
+                    # Update on panel
+                    success = False
+                    if hasattr(panel_mgr, 'update_client_expiration'):
+                        success = panel_mgr.update_client_expiration(
+                            service['inbound_id'],
+                            service['client_uuid'],
+                            expires_timestamp
+                        )
+                    else:
+                        success = True # Panel doesn't support, just update DB
+                        
+                    if success:
+                        # Update database
+                        with self.db.get_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                UPDATE clients 
+                                SET expire_days = expire_days + %s,
+                                    expires_at = %s,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id = %s
+                            ''', (days, new_expires.isoformat(), service['id']))
+                            conn.commit()
+                        logger.info(f"Added {days} days to service {service['id']} for user {telegram_id}")
+                        return
+
+            # Fallback: Store as credit
             current = self.db.get_setting(f'user_{telegram_id}_time_credit') or 0
             new_credit = int(current) + days
             self.db.set_setting(f'user_{telegram_id}_time_credit', str(new_credit))
+            logger.info(f"Stored {days} days credit for user {telegram_id}")
+            
         except Exception as e:
             logger.error(f"Error adding time credit: {e}")
+
+    def _get_user_id_by_telegram_id(self, telegram_id: int) -> Optional[int]:
+        """Helper to get user ID from telegram ID"""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except Exception:
+            return None
     
     def _create_personal_discount(self, telegram_id: int, discount_percent: int) -> str:
         """Create a personal discount code for the user"""

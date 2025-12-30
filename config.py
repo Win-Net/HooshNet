@@ -17,8 +17,6 @@ BOT_CONFIG = {
     'bot_username': os.getenv('BOT_USERNAME', ''),
     'reports_channel_id': int(os.getenv('REPORTS_CHANNEL_ID', '0')),  # Channel for reports
     'receipts_channel_id': int(os.getenv('RECEIPTS_CHANNEL_ID', '0')),  # Channel for payment receipts
-    'channel_id': os.getenv('CHANNEL_ID', '@YourChannel'),  # Channel username for forced join
-    'channel_link': os.getenv('CHANNEL_LINK', 'https://t.me/YourChannel')  # Channel link
 }
 
 # Validate required config

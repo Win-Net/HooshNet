@@ -161,4 +161,25 @@ class TelegramHelper:
         except Exception as e:
             logger.error(f"Error in sync wrapper for sending message to {chat_id}: {e}")
             return False
+    
+    @classmethod
+    async def create_forum_topic(cls, chat_id: int, name: str) -> int:
+        """
+        Create a forum topic in a supergroup
+        
+        Args:
+            chat_id: Telegram chat ID (must be a supergroup)
+            name: Topic name
+            
+        Returns:
+            Topic ID (message_thread_id) or 0 if failed
+        """
+        try:
+            bot = cls.get_bot()
+            topic = await bot.create_forum_topic(chat_id=chat_id, name=name)
+            logger.info(f"✅ Created forum topic '{name}' (ID: {topic.message_thread_id}) in chat {chat_id}")
+            return topic.message_thread_id
+        except Exception as e:
+            logger.error(f"❌ Error creating forum topic '{name}' in chat {chat_id}: {e}")
+            return 0
 

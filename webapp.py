@@ -131,7 +131,7 @@ def parse_datetime_safe(date_value):
 # Initialize Flask app
 app = Flask(__name__)
 # app.secret_key is set later using persistent file
-logger.info("🚀 STARTING WEBAPP - VERSION: SESSION_FIX_V2")
+logger.info("🚀 STARTING WEBAPP - VERSION: DEBUG_HTTPS")
 
 # Configure maximum file upload size (10MB for receipts)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB
@@ -194,16 +194,34 @@ def inject_bot_prefix():
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Sessions expire after 24 hours
 # SECURITY: Use secure cookies in production (HTTPS required)
 # Auto-detect HTTPS from request scheme
-use_https = os.getenv('USE_HTTPS', 'false').lower() == 'true'
+use_https_env = os.getenv('USE_HTTPS', 'false').lower()
+use_https = use_https_env == 'true'
+logger.info(f"🔒 USE_HTTPS environment variable: {use_https_env} (Parsed: {use_https})")
 
 # CRITICAL FIX: Use ProxyFix to handle Nginx headers correctly
 from werkzeug.middleware.proxy_fix import ProxyFix
-# x_for=1: Trust X-Forwarded-For
-# x_proto=1: Trust X-Forwarded-Proto
-# x_host=1: Trust X-Forwarded-Host
-# x_port=1: Trust X-Forwarded-Port
-# x_prefix=1: Trust X-Forwarded-Prefix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+# Force HTTPS if configured (fixes issues where proxy sends http header)
+if use_https:
+    class ForceHTTPS:
+        def __init__(self, app):
+            self.app = app
+
+        def __call__(self, environ, start_response):
+            environ['wsgi.url_scheme'] = 'https'
+            return self.app(environ, start_response)
+    
+    # Apply ForceHTTPS FIRST (inner) so it runs LAST (closest to app)
+    # This ensures it overrides anything ProxyFix might have set
+    app.wsgi_app = ForceHTTPS(app.wsgi_app)
+    
+    # Then wrap with ProxyFix (outer) so it processes headers first
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+    
+    logger.info("🔒 Forced HTTPS scheme for all requests")
+else:
+    # Just use ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
 # Session Configuration
 # We use ProxyFix so Flask knows when it's secure. 
@@ -261,8 +279,11 @@ except Exception as e:
 def security_check():
     """Comprehensive security check before every request"""
     # DEBUG: Log headers to diagnose login loop
-    if request.endpoint in ['index', 'telegram_auth', 'dashboard']:
+    if request.endpoint in ['index', 'telegram_auth', 'dashboard', 'health_check']:
         logger.info(f"DEBUG HEADERS for {request.endpoint}:")
+        logger.info(f"  Scheme: {request.scheme}")
+        logger.info(f"  Host: {request.host}")
+        logger.info(f"  Headers: {dict(request.headers)}")
         for header, value in request.headers.items():
             logger.info(f"  {header}: {value}")
             
@@ -351,6 +372,23 @@ def set_db_for_request():
 def security_headers(response):
     """Apply security headers to every response"""
     return secure_after_request(response)
+
+# Health check endpoint for Docker
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Docker/Kubernetes"""
+    try:
+        # Basic health check - just return OK
+        return jsonify({
+            'status': 'healthy',
+            'message': 'VPN Bot Web Application is running'
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'message': str(e)
+        }), 500
 
 # Note: Static file protection is handled in security_check() before_request handler
 # Flask's default static file handler is used, but we filter requests before they reach it
@@ -708,7 +746,7 @@ def sync_all_clients_data():
                                 UPDATE clients 
                                 SET used_gb = %s,
                                     last_activity = %s,
-                                    is_online = %s,
+                                    cached_is_online = %s,
                                     remaining_days = %s,
                                     expires_at = %s,
                                     updated_at = NOW()
@@ -972,6 +1010,10 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
+            # SECURITY: Return 401 for API requests
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+                
             # SECURITY: Redirect to admin login instead of index
             # Check for bot_name in path or session
             bot_name = session.get('bot_name')
@@ -1202,11 +1244,11 @@ def telegram_auth():
     except Exception as e:
         logger.error(f"Error in Telegram auth: {e}")
         # SECURITY: Don't expose error details to client
-        return jsonify({'success': False, 'message': 'خطا در احراز هویت'}), 500
+        return jsonify({'success': False, 'message': 'Authentication failed'}), 500
 
 @app.route('/auth/telegram-webapp', methods=['POST'])
 @app.route('/<bot_name>/auth/telegram-webapp', methods=['POST'])
-@rate_limit(max_requests=5, window_seconds=60)  # 5 attempts per minute
+@rate_limit(max_requests=10, window_seconds=60)
 def telegram_webapp_auth(bot_name=None):
     """Handle Telegram Web App authentication"""
     try:
@@ -5544,6 +5586,76 @@ def api_check_transaction_status(invoice_id):
         logger.error(traceback.format_exc())
         return secure_error_response(e)
 
+@app.route('/admin/settings/backup', methods=['GET', 'POST'])
+@admin_required
+def api_admin_settings_backup():
+    """API endpoint to update backup settings"""
+    try:
+        db_instance = get_db()
+        from settings_manager import SettingsManager
+        settings_mgr = SettingsManager(db_instance)
+
+        if request.method == 'GET':
+            enabled = settings_mgr.get_setting('auto_backup_enabled', False)
+            frequency = settings_mgr.get_setting('auto_backup_frequency', 24)
+            return jsonify({
+                'success': True,
+                'enabled': enabled,
+                'frequency': frequency
+            })
+
+        # POST request
+        data = request.get_json()
+        enabled = data.get('enabled', False)
+        frequency = data.get('frequency', 24)
+        
+        # Update settings
+        settings_mgr.set_setting('auto_backup_enabled', enabled, description="Auto Backup Enabled", updated_by=session.get('user_id'))
+        settings_mgr.set_setting('auto_backup_frequency', frequency, description="Auto Backup Frequency (Hours)", updated_by=session.get('user_id'))
+        
+        # Trigger immediate backup if enabled
+        if enabled:
+            def trigger_backup():
+                try:
+                    from database_backup_system import DatabaseBackupManager
+                    from telegram_helper import TelegramHelper
+                    import asyncio
+                    
+                    # Create new DB instance for thread
+                    from professional_database import ProfessionalDatabaseManager
+                    from config import DB_CONFIG
+                    thread_db = ProfessionalDatabaseManager(DB_CONFIG)
+                    
+                    # Initialize backup manager
+                    bot = TelegramHelper.get_bot()
+                    backup_mgr = DatabaseBackupManager(thread_db, bot, BOT_CONFIG)
+                    
+                    # Run async backup in new event loop
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(backup_mgr.create_and_send_backup())
+                    loop.close()
+                    
+                    # Update last backup time
+                    # We need to re-instantiate settings manager with thread_db
+                    thread_settings_mgr = SettingsManager(thread_db)
+                    thread_settings_mgr.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
+                    logger.info("✅ Immediate backup triggered successfully")
+                except Exception as e:
+                    logger.error(f"❌ Error in immediate backup trigger: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            # Run in background thread
+            threading.Thread(target=trigger_backup).start()
+            
+        return jsonify({'success': True, 'message': 'تنظیمات بکاپ با موفقیت ذخیره شد'})
+        
+    except Exception as e:
+        logger.error(f"Error updating backup settings: {e}")
+        return secure_error_response(e)
+
+
 @app.route('/admin/settings')
 @admin_required
 def admin_settings():
@@ -6285,7 +6397,8 @@ def api_admin_add_panel():
             subscription_url=data.get('subscription_url'),
             sale_type=data.get('sale_type', 'gigabyte'),
             default_inbound_id=default_inbound_id,
-            extra_config=data.get('extra_config')
+            extra_config=data.get('extra_config'),
+            delivery_method=data.get('delivery_method', 'subscription_link')
         )
         
         if success:
@@ -6430,7 +6543,8 @@ def api_admin_update_panel(panel_id):
             panel_type=data.get('panel_type'),
             sale_type=data.get('sale_type'),
             default_inbound_id=data.get('default_inbound_id'),
-            extra_config=data.get('extra_config')
+            extra_config=data.get('extra_config'),
+            delivery_method=data.get('delivery_method')
         )
         
         if success:
@@ -6653,46 +6767,31 @@ def api_admin_user_balance(user_id):
 
 🎉 می‌توانید از این موجودی برای خرید سرویس استفاده کنید."""
         
-        # Update user balance and create transaction in a transaction
-        with db_instance.get_connection() as conn:
-            cursor = conn.cursor(dictionary=True)
+        # Update user balance using professional database manager methods
+        success = False
+        if balance_type == 'subtract':
+            success = db_instance.deduct_balance(user_id, amount, transaction_type, description=action_desc)
+        else:
+            success = db_instance.add_balance(user_id, amount, transaction_type, description=action_desc)
             
-            # Update balance
-            cursor.execute('''
-                UPDATE users 
-                SET balance = %s, last_activity = CURRENT_TIMESTAMP
-                WHERE id = %s
-            ''', (new_balance, user_id))
-            
-            # Add transaction record
+        if success:
+            # Send notification to user via Telegram
             try:
-                cursor.execute('''
-                    INSERT INTO transactions (user_id, amount, description, transaction_type, created_at)
-                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ''', (user['telegram_id'], -amount if balance_type == 'subtract' else amount, action_desc, transaction_type))
+                from telegram_helper import TelegramHelper
+                TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
             except Exception as e:
-                # If transactions table doesn't exist or has different structure, use balance_transactions
-                try:
-                    cursor.execute('''
-                        INSERT INTO balance_transactions (user_id, amount, transaction_type, description, created_at)
-                        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ''', (user_id, -amount if balance_type == 'subtract' else amount, transaction_type, action_desc))
-                except Exception:
-                    pass  # If both fail, continue without transaction log
+                logger.error(f"Error sending balance notification to user {user['telegram_id']}: {e}")
+                # Don't fail the request if notification fails
             
-            conn.commit()
-            cursor.close()
-        
-        # Send notification to user via Telegram
-        try:
-            from telegram_helper import TelegramHelper
-            TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
-        except Exception as e:
-            logger.error(f"Error sending balance notification to user {user['telegram_id']}: {e}")
-            # Don't fail the request if notification fails
-        
-        message = f'{amount:,} تومان به موجودی کاربر اضافه شد' if balance_type == 'add' else f'{amount:,} تومان از موجودی کاربر کسر شد'
-        return jsonify({'success': True, 'message': message, 'new_balance': new_balance})
+            # Get updated balance
+            updated_user = db_instance.get_user_by_id(user_id)
+            new_balance_val = updated_user.get('balance', 0) if updated_user else new_balance
+            
+            message = f'{amount:,} تومان به موجودی کاربر اضافه شد' if balance_type == 'add' else f'{amount:,} تومان از موجودی کاربر کسر شد'
+            return jsonify({'success': True, 'message': message, 'new_balance': new_balance_val})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در بروزرسانی موجودی'}), 500
+
     except Exception as e:
         logger.error(f"Error updating user balance: {e}")
         import traceback
@@ -8571,6 +8670,33 @@ def update_theme():
     except Exception as e:
         return secure_error_response(e)
 
+@app.route('/admin/settings/backup', methods=['GET', 'POST'])
+@admin_required
+def admin_backup_settings():
+    """Get or update backup settings"""
+    try:
+        from settings_manager import SettingsManager
+        settings_mgr = SettingsManager()
+        
+        if request.method == 'GET':
+            enabled = settings_mgr.get_setting('auto_backup_enabled', False)
+            frequency = settings_mgr.get_setting('auto_backup_frequency', 24)
+            return jsonify({'success': True, 'enabled': enabled, 'frequency': frequency})
+            
+        elif request.method == 'POST':
+            data = request.json
+            enabled = data.get('enabled', False)
+            frequency = data.get('frequency', 24)
+            
+            settings_mgr.set_setting('auto_backup_enabled', enabled, description="Enable Auto Backup", user_id=session.get('user_id'))
+            settings_mgr.set_setting('auto_backup_frequency', frequency, description="Auto Backup Frequency (Hours)", user_id=session.get('user_id'))
+            
+            return jsonify({'success': True, 'message': 'تنظیمات بکاپ با موفقیت ذخیره شد'})
+            
+    except Exception as e:
+        logger.error(f"Error managing backup settings: {e}")
+        return secure_error_response(e)
+
 
 
 # ==================== WHEEL OF FORTUNE ROUTES ====================
@@ -8611,8 +8737,14 @@ def api_wheel_config():
         config = lottery_system.get_wheel_config()
         
         # Check if user can spin
-        user_id = session.get('telegram_id')
-        can_spin, message = lottery_system.can_spin(user_id)
+        user_id = session.get('user_id')
+        user = db_instance.get_user(user_id)
+        telegram_id = user['telegram_id'] if user else None
+        
+        if not telegram_id:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+            
+        can_spin, message = lottery_system.can_spin(telegram_id)
         
         return jsonify({
             'success': True,
@@ -8634,9 +8766,14 @@ def api_wheel_spin():
         db_instance = get_db()
         lottery_system.set_database(db_instance)
         
-        user_id = session.get('telegram_id')
+        user_id = session.get('user_id')
+        user = db_instance.get_user(user_id)
+        telegram_id = user['telegram_id'] if user else None
         
-        success, result = lottery_system.spin_wheel(user_id)
+        if not telegram_id:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+        
+        success, result = lottery_system.spin_wheel(telegram_id)
         
         if success:
             return jsonify({
@@ -8747,6 +8884,98 @@ def api_admin_wheel_prize_detail(prize_id):
         logger.error(f"Error managing prize detail: {e}")
         return secure_error_response(e)
 
+
+# ==========================================
+# ADMIN SETTINGS ROUTES
+# ==========================================
+
+@app.route('/admin/settings/backup', methods=['GET', 'POST'])
+def admin_settings_backup():
+    """Handle backup settings"""
+    # Check admin session
+    if not session.get('admin_logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+    from settings_manager import SettingsManager
+    settings = SettingsManager()
+    
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'enabled': settings.get_setting('auto_backup_enabled', False),
+            'frequency': int(settings.get_setting('auto_backup_interval', 24))
+        })
+        
+    # POST
+    try:
+        data = request.get_json()
+        enabled = data.get('enabled')
+        frequency = data.get('frequency')
+        
+        # Save settings
+        settings.set_setting('auto_backup_enabled', enabled, description="Auto Backup Enabled", updated_by=session.get('user_id'))
+        settings.set_setting('auto_backup_interval', int(frequency), description="Auto Backup Interval (Hours)", updated_by=session.get('user_id'))
+        
+        # Trigger immediate backup if enabled (or re-enabled) or if frequency changed while enabled
+        # Basically if enabled is true, we trigger a backup to reset the timer and confirm it works
+        if enabled:
+            try:
+                # Reset last backup time to NOW so the scheduler picks it up based on new interval
+                # BUT user requested immediate backup, so we do it now and set last time to now
+                from database_backup_system import DatabaseBackupManager
+                from telegram_helper import TelegramHelper
+                
+                # Get bot instance for backup manager
+                bot = TelegramHelper.get_bot()
+                
+                # Initialize backup manager
+                # We need to construct a minimal bot_config for the backup manager
+                # Since we are in webapp, we might not have full bot_config, but we have what's needed
+                from config import BOT_CONFIG
+                
+                # Ensure we pass the correct database manager
+                # get_db() returns ProfessionalDatabaseManager instance
+                db_manager = get_db()
+                backup_manager = DatabaseBackupManager(db_manager, bot, BOT_CONFIG)
+                
+                # Run backup in background to not block response
+                import asyncio
+                
+                async def run_immediate_backup():
+                    try:
+                        # Ensure topic exists
+                        await backup_manager.ensure_backup_topic()
+                        # Create and send backup
+                        if await backup_manager.create_and_send_backup():
+                            # Update last backup time
+                            # This is crucial: we set the last backup time to NOW
+                            # The scheduler checks: if (now - last_backup) >= frequency
+                            # So if we set it to now, the next backup will be in 'frequency' hours
+                            settings.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
+                            logger.info("✅ Immediate backup completed successfully and timer reset")
+                    except Exception as e:
+                        logger.error(f"❌ Error in immediate backup: {e}")
+
+                # Fire and forget (or run in event loop if possible)
+                # Since we are in Flask (sync), we need to run async code carefully
+                # Best way is to use a thread for the async loop
+                def run_async_backup():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_immediate_backup())
+                    loop.close()
+                
+                threading.Thread(target=run_async_backup).start()
+                
+                logger.info("🚀 Triggered immediate backup due to settings change")
+                
+            except Exception as e:
+                logger.error(f"❌ Error triggering immediate backup: {e}")
+        
+        return jsonify({'success': True, 'message': 'تنظیمات بکاپ ذخیره شد و بکاپ جدید در حال ارسال است'})
+    except Exception as e:
+        logger.error(f"Error saving backup settings: {e}")
+        return jsonify({'success': False, 'message': 'خطا در ذخیره تنظیمات'}), 500
 
 if __name__ == '__main__':
     # Create templates and static directories if they don't exist

@@ -32,6 +32,7 @@ class DatabaseBackupManager:
             bot: Telegram Bot instance (optional, for auto-backups)
             bot_config: Bot configuration dict (optional)
         """
+        self.db_manager = db_manager
         self.db_config = db_manager.db_config
         self.bot = bot
         self.bot_config = bot_config or {}
@@ -52,6 +53,36 @@ class DatabaseBackupManager:
             self.bot_name = "Manual Backup"
             self.bot_username = "Unknown"
             self.channel_id = None
+            
+    async def ensure_backup_topic(self) -> int:
+        """
+        Ensure backup topic exists in reports channel
+        Returns topic ID (message_thread_id)
+        """
+        if not self.channel_id or not self.enabled:
+            return 0
+            
+        try:
+            from settings_manager import SettingsManager
+            from telegram_helper import TelegramHelper
+            
+            settings_mgr = SettingsManager(self.db_manager)
+            topic_id = int(settings_mgr.get_setting('backup_topic_id', 0))
+            
+            if topic_id == 0:
+                logger.info(f"Creating new backup topic for channel {self.channel_id}...")
+                topic_id = await TelegramHelper.create_forum_topic(self.channel_id, "💾 Backups")
+                
+                if topic_id > 0:
+                    settings_mgr.set_setting('backup_topic_id', topic_id, description="Backup Topic ID", updated_by=0)
+                    logger.info(f"✅ Backup topic created with ID: {topic_id}")
+                else:
+                    logger.warning("⚠️ Failed to create backup topic, will send to main channel")
+            
+            return topic_id
+        except Exception as e:
+            logger.error(f"❌ Error ensuring backup topic: {e}")
+            return 0
     
     def _find_mysqldump(self) -> Optional[str]:
         """Find mysqldump executable path"""
@@ -298,6 +329,12 @@ class DatabaseBackupManager:
             return
         
         try:
+            # Ensure topic exists
+            topic_id = await self.ensure_backup_topic()
+            kwargs = {}
+            if topic_id > 0:
+                kwargs['message_thread_id'] = topic_id
+            
             timestamp = PersianDateTime.format_full_datetime()
             file_size = os.path.getsize(backup_path)
             file_size_mb = file_size / 1024 / 1024
@@ -326,7 +363,8 @@ class DatabaseBackupManager:
                     document=f,
                     filename=os.path.basename(backup_path),
                     caption=caption,
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    message_thread_id=kwargs.get('message_thread_id')
                 )
             
             logger.info(f"✅ Backup sent successfully to channel {self.channel_id}")
@@ -354,7 +392,8 @@ class DatabaseBackupManager:
                 await self.bot.send_message(
                     chat_id=self.channel_id,
                     text=error_msg,
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    message_thread_id=kwargs.get('message_thread_id')
                 )
             except:
                 pass
@@ -383,7 +422,8 @@ class DatabaseBackupManager:
                 await self.bot.send_message(
                     chat_id=self.channel_id,
                     text=error_msg,
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    message_thread_id=await self.ensure_backup_topic() or None
                 )
             except:
                 pass
@@ -392,27 +432,52 @@ class DatabaseBackupManager:
     async def start_auto_backup(self, interval_hours: int = 1):
         """
         Start automatic backup scheduler
-        
-        Args:
-            interval_hours: Hours between backups (default: 1)
         """
-        if not self.enabled:
-            logger.warning(f"⚠️ Backup system disabled for bot '{self.bot_name}' - not starting scheduler")
-            return
+        logger.info(f"🚀 Starting automatic backup scheduler for bot '{self.bot_name}'")
         
-        logger.info(f"🚀 Starting automatic backup scheduler for bot '{self.bot_name}' (interval: {interval_hours} hours)")
+        from settings_manager import SettingsManager
+        # Initialize SettingsManager with the existing db_manager
+        settings_mgr = SettingsManager(self.db_manager)
         
-        interval_seconds = interval_hours * 3600
+        # Ensure backup topic exists at startup
+        await self.ensure_backup_topic()
         
         while True:
             try:
-                await self.create_and_send_backup()
-                logger.info(f"⏰ Next backup scheduled in {interval_hours} hour(s)")
-                await asyncio.sleep(interval_seconds)
+                # Reload settings
+                enabled = settings_mgr.get_setting('auto_backup_enabled', False)
+                frequency_hours = settings_mgr.get_setting('auto_backup_frequency', 24)
+                last_backup_str = settings_mgr.get_setting('last_auto_backup_time')
+                
+                if not enabled:
+                    # Check every 10 minutes if enabled
+                    await asyncio.sleep(600) 
+                    continue
+                
+                should_backup = False
+                if not last_backup_str:
+                    should_backup = True
+                else:
+                    try:
+                        last_backup = datetime.fromisoformat(last_backup_str)
+                        # Check if enough time has passed
+                        if (datetime.now() - last_backup).total_seconds() >= frequency_hours * 3600:
+                            should_backup = True
+                    except:
+                        should_backup = True
+                
+                if should_backup:
+                    logger.info(f"⏰ Starting scheduled backup (Frequency: {frequency_hours}h)...")
+                    if await self.create_and_send_backup():
+                        settings_mgr.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
+                
+                # Check every 10 minutes
+                await asyncio.sleep(600)
+                
             except Exception as e:
                 logger.error(f"❌ Error in backup scheduler: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
                 # Wait before retrying
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
+                await asyncio.sleep(60)
 
